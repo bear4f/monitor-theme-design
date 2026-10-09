@@ -110,7 +110,7 @@ function sortNodes(nodes: Node[], field: SortField | null, order: SortOrder): No
  * opens into has to cover.
  */
 function Row({ node, span }: { node: Node; span: number }) {
-  const { metrics: full } = useAccess()
+  const { metrics: full, expiry } = useAccess()
   const [open, setOpen] = useState(false)
   const m = node.online ? node.metrics : null
   const traffic = monthUsage(node)
@@ -148,7 +148,7 @@ function Row({ node, span }: { node: Node; span: number }) {
           </span>
         </TableCell>
         <TableCell className={cn(COL.uptime, "tnum")}>{m ? duration(m.uptime) : "—"}</TableCell>
-        <TableCell className={cn(COL.expiry, "tnum")}><Expiry node={node} /></TableCell>
+        {expiry && <TableCell className={cn(COL.expiry, "tnum")}><Expiry node={node} /></TableCell>}
         <TableCell className={cn(COL.load, "tnum")}>{m ? m.load[0].toFixed(2) : "—"}</TableCell>
         <TableCell className={COL.speed}>
           {m ? (
@@ -241,7 +241,7 @@ function SortableHead({
 const BARE: (keyof typeof COL)[] = ["status", "name", "location"]
 
 export function ServerTable({ nodes }: { nodes: Node[] }) {
-  const { metrics: full } = useAccess()
+  const { metrics: full, expiry } = useAccess()
   const [query, setQuery] = useState("")
   const [picked, setSortField] = useState<SortField | null>(null)
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc")
@@ -307,7 +307,7 @@ export function ServerTable({ nodes }: { nodes: Node[] }) {
     ["bar", "硬盘", "disk"],
     ["traffic", "流量", "traffic"],
   ]
-  const heads = full ? every : every.filter(([col]) => BARE.includes(col))
+  const heads = every.filter(([col]) => (full ? col !== "expiry" || expiry : BARE.includes(col)))
 
   return (
     <Card className="@container gap-0 overflow-hidden py-0">

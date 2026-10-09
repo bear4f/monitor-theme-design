@@ -18,14 +18,17 @@ export type Access = {
   charts: boolean
   /** The list's live columns and the totals above them. */
   metrics: boolean
+  /** When a node's term ends, in the list's column and on the overview's last card. */
+  expiry: boolean
 }
 
-const FULL: Access = { overview: true, charts: true, metrics: true }
+const FULL: Access = { overview: true, charts: true, metrics: true, expiry: true }
 
 const KEYS: Record<keyof Access, string> = {
   overview: "guest_overview",
   charts: "guest_charts",
   metrics: "guest_metrics",
+  expiry: "guest_expiry",
 }
 
 // The manifest's own defaults, for the frames before the saved settings arrive
@@ -36,7 +39,12 @@ const DEFAULTS = Object.fromEntries(fields.map((f) => [f.key, f.default]))
 export function resolveAccess(authed: boolean, config: Record<string, unknown> | null): Access {
   if (authed) return FULL
   const granted = (key: string) => (config ?? DEFAULTS)[key] === true
-  return { overview: granted(KEYS.overview), charts: granted(KEYS.charts), metrics: granted(KEYS.metrics) }
+  return {
+    overview: granted(KEYS.overview),
+    charts: granted(KEYS.charts),
+    metrics: granted(KEYS.metrics),
+    expiry: granted(KEYS.expiry),
+  }
 }
 
 const AccessContext = createContext<Access>(FULL)

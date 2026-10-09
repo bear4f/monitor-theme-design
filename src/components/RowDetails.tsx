@@ -81,7 +81,7 @@ function Withheld({ className }: { className?: string }) {
 
 /** The four cards: the machine, what it is doing, what it has moved, and its term. */
 function Overview({ node }: { node: Node }) {
-  const { charts } = useAccess()
+  const { charts, expiry } = useAccess()
   const m = node.online ? node.metrics : null
   const away = node.last_seen ? Date.now() / 1000 - node.last_seen : 0
   const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
@@ -170,8 +170,8 @@ function Overview({ node }: { node: Node }) {
         <Line label="续费">
           {node.price > 0 ? `${money(node.price, node.currency)} / ${CYCLES[node.billing_cycle] ?? node.billing_cycle}` : "免费"}
         </Line>
-        <Line label="到期">{node.expires_at || "长期有效"}</Line>
-        {days !== null && (
+        {expiry && <Line label="到期">{node.expires_at || "长期有效"}</Line>}
+        {expiry && days !== null && (
           <Line label="剩余">
             {days < 0 ? (
               <Badge variant="destructive" className="px-1.5 py-0 text-[10px]">已过期 {-days} 天</Badge>
