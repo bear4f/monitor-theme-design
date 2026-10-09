@@ -15,6 +15,7 @@ import {
   axisBytes, axisTop, bytes, clockFor, despike, ewma, quarters, rate, timeTicks, uptime,
 } from "@/lib/format"
 import { fetchHistory, inRanges, LATENCY_HOURS, RANGES, type History, type Point, type Series } from "@/lib/history"
+import { useLive } from "@/lib/live"
 import { knownPing, recordPing } from "@/lib/pings"
 import { usePref } from "@/lib/prefs"
 import { cn } from "@/lib/utils"
@@ -490,6 +491,59 @@ export function Latency({
   )
 }
 
+// The chart page's first window: not an hour of history but each report as it
+// arrives, from the samples lib/live.ts keeps. Zero, where the rest are hours.
+const LIVE = 0
+
+// A live chart is never drawn narrower than this. With the first few reports
+// stretched across the whole panel, a three-second blip would be a mountain.
+const LIVE_FLOOR_MS = 120_000
+
+// Reports further apart than this are not joined: the node, or this page's
+// connection to the hub, was away, and a line across the gap would claim
+// readings nobody took. Well clear of the five seconds the fallback poll runs at.
+const LIVE_GAP_S = 20
+
+type Row = { ts: number } & { [K in Exclude<keyof Point, "ts">]: number | null }
+
+/** The samples as chart rows, in milliseconds, with an empty row wherever reports stopped. */
+function liveRows(samples: Point[]): Row[] {
+  const rows: Row[] = []
+  samples.forEach((p, i) => {
+    if (i > 0 && p.ts - samples[i - 1].ts > LIVE_GAP_S) {
+      rows.push({ ts: (samples[i - 1].ts + 1) * 1_000, cpu: null, mem_used: null, disk_used: null, net_rx: null, net_tx: null })
+    }
+    rows.push({ ...p, ts: p.ts * 1_000 })
+  })
+  return rows
+}
+
+const LIVE_STEPS = [10, 15, 30, 60, 120].map((s) => s * 1_000)
+const HMS = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" })
+
+/**
+ * The live chart's time axis: ending at the newest report and reaching back
+ * over what has been kept, so the line grows leftwards from the page opening
+ * and then slides. Ticked in seconds while the span is short enough that a
+ * minute would be one tick or none.
+ */
+function liveAxis(rows: { ts: number }[]) {
+  const to = rows.length ? rows[rows.length - 1].ts : 0
+  const from = rows.length ? Math.min(rows[0].ts, to - LIVE_FLOOR_MS) : 0
+  const step = LIVE_STEPS.find((s) => (to - from) / s <= 8) ?? LIVE_STEPS[LIVE_STEPS.length - 1]
+  const ticks: number[] = []
+  for (let t = Math.ceil(from / step) * step; t <= to; t += step) ticks.push(t)
+  return {
+    dataKey: "ts",
+    type: "number" as const,
+    domain: [from, to] as [number, number],
+    ticks,
+    tickFormatter: step < 60_000 ? (ms: number) => HMS.format(ms) : clockFor(1),
+    minTickGap: 40,
+    ...AXIS,
+  }
+}
+
 // The chart page's panels, one on screen at a time. The last is offered only
 // once a window has shown the node has a probe.
 const CHARTS = [
@@ -518,7 +572,14 @@ export function NodeDetail({ node }: { node: Node }) {
   // trips alone, and is on that tab whatever was picked before.
   const charts = CHARTS.filter((c) => (c.key === "ping" ? known === true : access.charts))
   const chart = !access.charts ? "ping" : charts.some((c) => c.key === picked) ? picked : "cpu"
-  const { data, failed, loading, retry } = useHistory(node.id, hours, "metrics", access.charts)
+  // The live window is the resource panels' alone: round trips are probed about
+  // once a minute and are not in the snapshots, so on the latency tab it is not
+  // offered, and a reader who arrives there with it picked gets the shortest
+  // window of history until they go back.
+  const live = hours === LIVE && chart !== "ping"
+  const span = hours === LIVE ? 1 : hours
+  const samples = useLive(node.id)
+  const { data, failed, loading, retry } = useHistory(node.id, span, "metrics", access.charts && !live)
 
   const m = node.metrics
   const away = node.last_seen ? Date.now() / 1000 - node.last_seen : 0
@@ -528,24 +589,25 @@ export function NodeDetail({ node }: { node: Node }) {
   const timed = access.overview || access.metrics
 
   // The hub answers in seconds; the time axis requires milliseconds.
-  const metricRows = useMemo(
-    () => (data?.metrics ?? []).map((m) => ({ ...m, ts: m.ts * 1_000 })),
-    [data],
+  const metricRows = useMemo<Row[]>(
+    () => (live ? liveRows(samples) : (data?.metrics ?? []).map((m) => ({ ...m, ts: m.ts * 1_000 }))),
+    [live, samples, data],
   )
+  const axis = live ? liveAxis(metricRows) : timeAxis(metricRows, span)
 
   // Axis tops for the two panels with no capacity to measure against. CPU and a
   // transfer rate do not express fullness: against a fixed 0-100, a machine
   // sitting at 0.4% draws as a line along the panel's floor. Memory and disk keep
   // their totals as tops, where fullness is the entire question.
   const tops = useMemo(() => {
-    const max = (pick: (m: Point) => number) =>
-      metricRows.reduce((hi, m) => Math.max(hi, pick(m)), 0)
+    const max = (pick: (m: Row) => number | null) =>
+      metricRows.reduce((hi, m) => Math.max(hi, pick(m) ?? 0), 0)
     return {
       // A floor of 4%, or a machine that never exceeds 0.4% would get an axis of
       // 0-0.4 and render every scheduler blip as a peak. Capped at 100.
       cpu: axisTop(max((m) => m.cpu), 4, 10, 100),
       // Base 1024, so the steps are round in the unit `axisBytes` prints.
-      rate: axisTop(max((m) => Math.max(m.net_rx, m.net_tx)), 1024, 1024),
+      rate: axisTop(max((m) => Math.max(m.net_rx ?? 0, m.net_tx ?? 0)), 1024, 1024),
     }
   }, [metricRows])
 
@@ -586,28 +648,37 @@ export function NodeDetail({ node }: { node: Node }) {
           <span />
         )}
         <Segmented
-          value={hours}
+          value={chart === "ping" ? span : hours}
           onChange={setHours}
-          options={RANGES.map((r) => ({ value: r.hours, label: r.label }))}
+          options={[
+            ...(chart === "ping" ? [] : [{
+              value: LIVE,
+              label: <><span className="size-1.5 rounded-full bg-emerald-500" />实时</>,
+              title: "每次上报一个点，保留最近 10 分钟；只有打开页面之后的数据",
+            }]),
+            ...RANGES.map((r) => ({ value: r.hours, label: r.label })),
+          ]}
           label="时间范围"
         />
       </div>
 
-      {chart === "ping" ? null : !data ? (
+      {chart === "ping" ? null : !live && !data ? (
         <Skeleton className="h-64 w-full" />
-      ) : failed ? (
+      ) : !live && failed ? (
         <Failed message={failed} retry={retry} />
-      ) : data.metrics.length === 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">这段时间没有历史数据</p>
+      ) : metricRows.length < (live ? 2 : 1) ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">
+          {!live ? "这段时间没有历史数据" : node.online ? "正在接收实时数据…" : "节点离线，没有实时数据"}
+        </p>
       ) : (
         // Faded while the next window is in flight, as the latency chart is.
-        <div className={cn("transition-opacity", loading && "opacity-50")}>
+        <div className={cn("transition-opacity", !live && loading && "opacity-50")}>
           {chart === "cpu" ? (
             <Panel title="CPU 使用率">
               <ResponsiveContainer>
                 <AreaChart data={metricRows}>
                   <CartesianGrid className="stroke-border" vertical={false} />
-                  <XAxis {...timeAxis(metricRows, hours)} />
+                  <XAxis {...axis} />
                   <YAxis domain={[0, tops.cpu]} ticks={quarters(tops.cpu)} unit="%" width={Y_WIDTH} {...AXIS} />
                   <Tooltip labelFormatter={label} formatter={(v) => [`${Number(v).toFixed(1)}%`, "CPU"]} contentStyle={TIP} />
                   <Area dataKey="cpu" stroke="var(--color-chart-1)" fill="var(--color-chart-1)" fillOpacity={0.15} {...SERIES} />
@@ -624,7 +695,7 @@ export function NodeDetail({ node }: { node: Node }) {
               <ResponsiveContainer>
                 <AreaChart data={metricRows}>
                   <CartesianGrid className="stroke-border" vertical={false} />
-                  <XAxis {...timeAxis(metricRows, hours)} />
+                  <XAxis {...axis} />
                   <YAxis domain={[0, node.mem_total]} ticks={quarters(node.mem_total)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
                   <Tooltip labelFormatter={label} formatter={(v) => bytes(Number(v))} contentStyle={TIP} />
                   <Area dataKey="mem_used" name="内存" stroke="var(--color-chart-4)" fill="var(--color-chart-4)" fillOpacity={0.15} {...SERIES} />
@@ -646,7 +717,7 @@ export function NodeDetail({ node }: { node: Node }) {
               <ResponsiveContainer>
                 <LineChart data={metricRows}>
                   <CartesianGrid className="stroke-border" vertical={false} />
-                  <XAxis {...timeAxis(metricRows, hours)} />
+                  <XAxis {...axis} />
                   <YAxis domain={[0, tops.rate]} ticks={quarters(tops.rate)} tickFormatter={axisBytes} unit="/s" width={Y_WIDTH} {...AXIS} />
                   <Tooltip labelFormatter={label} formatter={(v) => rate(Number(v))} contentStyle={TIP} />
                   <Line dataKey="net_rx" name="下行" stroke="var(--color-chart-2)" {...SERIES} />
@@ -662,7 +733,7 @@ export function NodeDetail({ node }: { node: Node }) {
               <ResponsiveContainer>
                 <AreaChart data={metricRows}>
                   <CartesianGrid className="stroke-border" vertical={false} />
-                  <XAxis {...timeAxis(metricRows, hours)} />
+                  <XAxis {...axis} />
                   <YAxis domain={[0, node.disk_total]} ticks={quarters(node.disk_total)} tickFormatter={axisBytes} width={Y_WIDTH} {...AXIS} />
                   <Tooltip labelFormatter={label} formatter={(v) => bytes(Number(v))} contentStyle={TIP} />
                   <Area dataKey="disk_used" name="硬盘" stroke="var(--color-chart-5)" fill="var(--color-chart-5)" fillOpacity={0.15} {...SERIES} />
@@ -682,7 +753,7 @@ export function NodeDetail({ node }: { node: Node }) {
           otherwise. The cache makes the return to the tab immediate. */}
       {(chart === "ping" || known === undefined) && (
         <div hidden={chart !== "ping"}>
-          <Latency id={node.id} hours={hours} className="h-64" onKnown={learn} />
+          <Latency id={node.id} hours={span} className="h-64" onKnown={learn} />
         </div>
       )}
 

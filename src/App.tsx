@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { AccessProvider, resolveAccess } from "@/lib/access"
 import { api, useNodes } from "@/lib/api"
 import { primeGlances, recallLines, rememberLines } from "@/lib/glance"
+import { recordLive } from "@/lib/live"
 import { Link, useNodeRoute } from "@/lib/route"
 import { THEMES } from "@/lib/themes"
 import { loadConfig, saveConfig } from "@/lib/config"
@@ -418,6 +419,12 @@ export default function App() {
   useEffect(() => {
     if (me && !me.public_page && !me.authed) location.href = "/admin/"
   }, [me])
+
+  // Every snapshot is kept for the chart page's live window, whichever page
+  // is up, so the window is not empty when a reader gets to it.
+  useEffect(() => {
+    if (nodes) recordLive(nodes)
+  }, [nodes])
 
   const sorted = [...(nodes ?? [])].sort((a, b) => a.sort - b.sort || a.id - b.id)
   const selected = sorted.find((n) => n.id === open)
