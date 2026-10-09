@@ -420,6 +420,11 @@ export default function App() {
   const selected = sorted.find((n) => n.id === open)
   const site = me?.site_name || "Monitor"
   const notice = typeof config?.notice === "string" ? config.notice.trim() : ""
+  // The probes the list's strip shows, or null for no strip. Null too until the
+  // settings arrive, so the rows do not start asking for what the site turned off.
+  const rowLatency = config?.row_latency === true && typeof config.row_latency_lines === "string"
+    ? config.row_latency_lines
+    : null
   const authed = me?.authed === true
   const access = useMemo(() => resolveAccess(authed, config), [authed, config])
 
@@ -522,7 +527,7 @@ export default function App() {
           sorted.length === 0 ? (
             <Card className="py-16 text-center text-sm text-muted-foreground">还没有节点</Card>
           ) : (
-            <ServerTable nodes={sorted} />
+            <ServerTable nodes={sorted} latency={rowLatency} />
           )
         ) : selected ? (
           <Card className="grid gap-6 p-5 md:grid-cols-[220px_minmax(0,1fr)] max-md:gap-4 max-md:p-3">

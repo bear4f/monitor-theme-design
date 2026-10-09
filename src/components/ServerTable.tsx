@@ -1,8 +1,9 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Search } from "lucide-react"
 
-import { Dot, Flag, Meter, Num, OsIcon, SLOT } from "@/components/NodeMarks"
+import { deployed, Dot, Flag, Meter, Num, OsIcon, SLOT } from "@/components/NodeMarks"
 import { RowDetails } from "@/components/RowDetails"
+import { RowLatency } from "@/components/RowLatency"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,6 +12,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAccess } from "@/lib/access"
 import type { Node } from "@/lib/api"
 import { bytes, compact, daysUntil, distro, duration, FOREVER, monthUsage, pair, percent } from "@/lib/format"
+import { pickProbes, useGlance } from "@/lib/glance"
+import { knownPing } from "@/lib/pings"
 import { cn } from "@/lib/utils"
 
 /**
@@ -107,14 +110,22 @@ function sortNodes(nodes: Node[], field: SortField | null, order: SortOrder): No
 
 /**
  * `span` is how many columns the table has for this reader, which the row it
- * opens into has to cover.
+ * opens into has to cover. `lines` is the site's choice of probes for the
+ * strip under the row, and null when the site shows none.
  */
-function Row({ node, span }: { node: Node; span: number }) {
+function Row({ node, span, lines }: { node: Node; span: number; lines: string | null }) {
   const { metrics: full, expiry } = useAccess()
   const [open, setOpen] = useState(false)
   const m = node.online ? node.metrics : null
   const traffic = monthUsage(node)
   const toggle = () => setOpen((o) => !o)
+  const glance = useGlance(node.id, lines !== null && deployed(node))
+  const probes = useMemo(() => glance && pickProbes(glance, lines ?? ""), [glance, lines])
+  // The strip, closed rows only: an open one has the chart itself below it.
+  // Its height is held while the first answer is on its way, unless an earlier
+  // visit found this node has no probe, so the list does not jump as it fills.
+  const strip = lines !== null && deployed(node) && !open
+    && (probes === null ? knownPing(node.id) !== false : probes.length > 0)
 
   return (
     <>
@@ -126,6 +137,8 @@ function Row({ node, span }: { node: Node; span: number }) {
         className={cn(
           "cursor-pointer transition-colors hover:bg-muted/40",
           open && "border-b-0 bg-muted/25 hover:bg-muted/30",
+          // One row to the eye and to the pointer, with the strip below.
+          strip && "border-b-0 [&:has(+tr:hover)]:bg-muted/40",
         )}
       >
         <TableCell className={cn(COL.status, "text-center")}>
@@ -184,6 +197,13 @@ function Row({ node, span }: { node: Node; span: number }) {
         </TableCell>
         </>}
       </TableRow>
+      {strip && (
+        <TableRow aria-hidden onClick={toggle} className="cursor-pointer hover:bg-muted/40 [tr:hover+&]:bg-muted/40">
+          <TableCell colSpan={span} className="p-0!">
+            <RowLatency probes={probes} />
+          </TableCell>
+        </TableRow>
+      )}
       {open && (
         <TableRow className="border-b bg-muted/25 hover:bg-muted/25">
           <TableCell colSpan={span} className="p-0! text-left whitespace-normal">
@@ -240,7 +260,7 @@ function SortableHead({
 // What a visitor is left with when the site withholds the live columns.
 const BARE: (keyof typeof COL)[] = ["status", "name", "location"]
 
-export function ServerTable({ nodes }: { nodes: Node[] }) {
+export function ServerTable({ nodes, latency = null }: { nodes: Node[]; latency?: string | null }) {
   const { metrics: full, expiry } = useAccess()
   const [query, setQuery] = useState("")
   const [picked, setSortField] = useState<SortField | null>(null)
@@ -475,7 +495,7 @@ export function ServerTable({ nodes }: { nodes: Node[] }) {
               </TableRow>
             ) : (
               filteredNodes.map((n) => (
-                <Row key={n.id} node={n} span={heads.length} />
+                <Row key={n.id} node={n} span={heads.length} lines={latency} />
               ))
             )}
           </TableBody>
