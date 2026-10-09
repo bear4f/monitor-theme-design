@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAccess } from "@/lib/access"
 import type { Node } from "@/lib/api"
 import { bytes, compact, daysUntil, distro, duration, FOREVER, monthUsage, pair, percent } from "@/lib/format"
-import { pickProbes, useGlance } from "@/lib/glance"
+import { pickProbes, useGlance, useGlances } from "@/lib/glance"
 import { knownPing } from "@/lib/pings"
 import { cn } from "@/lib/utils"
 
@@ -119,7 +119,7 @@ function Row({ node, span, lines }: { node: Node; span: number; lines: string | 
   const m = node.online ? node.metrics : null
   const traffic = monthUsage(node)
   const toggle = () => setOpen((o) => !o)
-  const glance = useGlance(node.id, lines !== null && deployed(node))
+  const glance = useGlance(node.id)
   const probes = useMemo(() => glance && pickProbes(glance, lines ?? ""), [glance, lines])
   // The strip, closed rows only: an open one has the chart itself below it.
   // Its height is held while the first answer is on its way, unless an earlier
@@ -269,6 +269,10 @@ export function ServerTable({ nodes, latency = null }: { nodes: Node[]; latency?
   // the column it is by: the rows would be arranged by a figure they are not
   // shown.
   const sortField = full || picked === "name" ? picked : null
+  // Every node's strip, not only the rows a filter or a group leaves on
+  // screen, so changing either finds the strips already there.
+  const pinged = useMemo(() => nodes.filter(deployed).map((n) => n.id), [nodes])
+  useGlances(pinged, latency !== null)
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {

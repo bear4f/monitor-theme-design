@@ -9,6 +9,7 @@ import { SEGMENT, Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AccessProvider, resolveAccess } from "@/lib/access"
 import { api, useNodes } from "@/lib/api"
+import { primeGlances, recallLines, rememberLines } from "@/lib/glance"
 import { Link, useNodeRoute } from "@/lib/route"
 import { THEMES } from "@/lib/themes"
 import { loadConfig, saveConfig } from "@/lib/config"
@@ -393,8 +394,10 @@ export default function App() {
 
   useEffect(() => {
     loadMe()
+    primeGlances()
     loadConfig().then((cfg) => {
       setConfig(cfg)
+      rememberLines(cfg.row_latency === true && typeof cfg.row_latency_lines === "string" ? cfg.row_latency_lines : null)
       if (!localStorage.getItem("theme-preset") && typeof cfg.theme_preset === "string") {
         setThemeId(cfg.theme_preset)
       }
@@ -420,11 +423,14 @@ export default function App() {
   const selected = sorted.find((n) => n.id === open)
   const site = me?.site_name || "Monitor"
   const notice = typeof config?.notice === "string" ? config.notice.trim() : ""
-  // The probes the list's strip shows, or null for no strip. Null too until the
-  // settings arrive, so the rows do not start asking for what the site turned off.
-  const rowLatency = config?.row_latency === true && typeof config.row_latency_lines === "string"
-    ? config.row_latency_lines
-    : null
+  // The probes the list's strip shows, or null for no strip. Until the settings
+  // arrive it is what the last visit read, so a returning visitor's strips are
+  // drawn with the list; a first visit waits, so the rows do not start asking
+  // for what the site turned off.
+  const [recalled] = useState(recallLines)
+  const rowLatency = !config
+    ? recalled
+    : config.row_latency === true && typeof config.row_latency_lines === "string" ? config.row_latency_lines : null
   const authed = me?.authed === true
   const access = useMemo(() => resolveAccess(authed, config), [authed, config])
 
