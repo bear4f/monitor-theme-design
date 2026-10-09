@@ -1,5 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { ArrowUp, ChartLine, House, Monitor, Moon, Palette, Sparkles, Sun, UserRound, type LucideIcon } from "lucide-react"
+import {
+  ArrowUp, ChartLine, ExternalLink, House, Mail, Monitor, Moon, Palette, Send, Sparkles, Sun, UserRound, type LucideIcon,
+} from "lucide-react"
 
 import { NodePicker } from "@/components/NodePicker"
 import { ServerTable, ServerTableSkeleton } from "@/components/ServerTable"
@@ -14,6 +16,7 @@ import { recordLive } from "@/lib/live"
 import { Link, useNodeRoute } from "@/lib/route"
 import { THEMES } from "@/lib/themes"
 import { loadConfig, saveConfig } from "@/lib/config"
+import { parseFooterItems } from "@/lib/footer"
 import { cn } from "@/lib/utils"
 // The name, author and repository the footer credits, read from the manifest
 // the panel reads, so the two never disagree.
@@ -438,6 +441,12 @@ export default function App() {
   const rowLatency = !config
     ? recalled
     : config.row_latency === true && typeof config.row_latency_lines === "string" ? config.row_latency_lines : null
+  // The footer as the site set it: its own line of text, its own links and
+  // notes, and whether the two credits stay.
+  const footerText = typeof config?.footer_text === "string" ? config.footer_text.trim() : ""
+  const footerLinks = typeof config?.footer_links === "string" ? config.footer_links : ""
+  const footerItems = useMemo(() => parseFooterItems(footerLinks), [footerLinks])
+  const credit = config?.footer_credit === true
   const authed = me?.authed === true
   const access = useMemo(() => resolveAccess(authed, config), [authed, config])
 
@@ -560,17 +569,47 @@ export default function App() {
 
       {/* Footer with matching measure */}
       <footer className="border-t border-border/60 bg-background/50">
-        <div className={cn(CONTAINER_CLASS, "flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-5 text-xs text-muted-foreground")}>
-          <span>
-            {site} · Powered by{" "}
-            <a href="https://github.com/monitor-probe/monitor" target="_blank" rel="noreferrer" className="font-medium hover:text-foreground">
-              monitor
-            </a>
+        {/* Drawn once the settings are in, at the height it will have, so a
+            footer the site rewrote does not show the default one first. */}
+        <div className={cn(CONTAINER_CLASS, "flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-5 text-xs text-muted-foreground")}>
+          {config && <>
+          <span className="min-w-0 break-words">
+            {footerText || site}
+            {credit && (
+              <>
+                {" "}· Powered by{" "}
+                <a href="https://github.com/monitor-probe/monitor" target="_blank" rel="noreferrer" className="font-medium hover:text-foreground">
+                  monitor
+                </a>
+              </>
+            )}
           </span>
-          <a href={theme.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground">
-            <Palette className="size-3.5" />
-            主题 {theme.name} · {theme.author}
-          </a>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+            {footerItems.map((item, i) => {
+              if (!item.href) return <span key={i}>{item.label}</span>
+              const mail = item.href.startsWith("mailto:")
+              const Icon = mail ? Mail : /^https?:\/\/(t\.me|telegram\.me)\//.test(item.href) ? Send : ExternalLink
+              return (
+                <a
+                  key={i}
+                  href={item.href}
+                  // A mail address opens the mail client; a new tab for it is a blank one left behind.
+                  {...(mail ? {} : { target: "_blank", rel: "noreferrer" })}
+                  className="inline-flex items-center gap-1.5 hover:text-foreground"
+                >
+                  <Icon className="size-3.5" />
+                  {item.label}
+                </a>
+              )
+            })}
+            {credit && (
+              <a href={theme.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-foreground">
+                <Palette className="size-3.5" />
+                主题 {theme.name} · {theme.author}
+              </a>
+            )}
+          </div>
+          </>}
         </div>
       </footer>
 

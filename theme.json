@@ -2,7 +2,7 @@
   "name": "monitor-theme-design",
   "short": "Design",
   "description": "Fork 自 tom2almighty/monitor-theme-design，增加访客权限：未登录只能看网络延迟，系统概览与资源图表登录后可见。保留 tweakcn 配色、Zen Browser 噪点磨砂质感、深浅模式与实时换肤",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "author": "tom2almighty",
   "url": "https://github.com/bear4f/monitor-theme-design",
   "config": [
@@ -16,6 +16,10 @@
     { "key": "guest_charts", "type": "boolean", "label": "访客可查看资源历史图表", "default": false, "help": "监控页的 CPU / 内存 / 网络 / 硬盘图表；关闭后访客只能看延迟图" },
     { "key": "guest_metrics", "type": "boolean", "label": "访客可查看列表实时指标", "default": true, "help": "首页列表的系统、在线、到期、负载、网速、CPU、内存、硬盘、流量各列与顶部汇总；关闭后访客只剩状态、名称、位置" },
     { "key": "guest_expiry", "type": "boolean", "label": "访客可查看到期时间", "default": false, "help": "首页列表的「到期」列，以及系统概览「账期信息」里的到期日与剩余天数" },
+    { "type": "title", "label": "页脚" },
+    { "key": "footer_text", "type": "string", "label": "页脚文字", "default": "", "help": "显示在页脚左侧，纯文本；留空显示站点名称" },
+    { "key": "footer_links", "type": "text", "label": "页脚链接与备注", "default": "", "help": "每行一项，写成「名称 | 链接」，链接支持 http、https 和 mailto；只写名称则显示为纯文字备注。最多 8 项" },
+    { "key": "footer_credit", "type": "boolean", "label": "显示 Powered by 与主题署名", "default": true, "help": "关闭后页脚只剩上面两项自定义内容" },
     { "type": "title", "label": "默认外观" },
     { "key": "theme_preset", "type": "select", "label": "默认配色方案", "default": "claude", "options": [
       { "value": "claude", "label": "Claude (暖陶)" },
