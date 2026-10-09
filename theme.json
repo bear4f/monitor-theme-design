@@ -2,7 +2,7 @@
   "name": "monitor-theme-design",
   "short": "Design",
   "description": "Fork 自 tom2almighty/monitor-theme-design，增加访客权限：未登录只能看网络延迟，系统概览与资源图表登录后可见。保留 tweakcn 配色、Zen Browser 噪点磨砂质感、深浅模式与实时换肤",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "author": "tom2almighty",
   "url": "https://github.com/bear4f/monitor-theme-design",
   "config": [
@@ -19,6 +19,12 @@
     { "type": "title", "label": "页脚" },
     { "key": "footer_text", "type": "string", "label": "页脚文字", "default": "", "help": "显示在页脚左侧，纯文本；留空显示站点名称" },
     { "key": "footer_links", "type": "text", "label": "页脚链接与备注", "default": "", "help": "每行一项，写成「名称 | 链接」，链接支持 http、https 和 mailto；只写名称则显示为纯文字备注。最多 8 项" },
+    { "key": "footer_layout", "type": "select", "label": "页脚位置", "default": "split", "options": [
+      { "value": "split", "label": "两端：文字在左，链接在右" },
+      { "value": "center", "label": "居中：链接在上，文字在下" },
+      { "value": "left", "label": "靠左：文字与链接排成一行" },
+      { "value": "right", "label": "靠右：文字与链接排成一行" }
+    ] },
     { "key": "footer_credit", "type": "boolean", "label": "显示 Powered by 与主题署名", "default": true, "help": "关闭后页脚只剩上面两项自定义内容" },
     { "type": "title", "label": "默认外观" },
     { "key": "theme_preset", "type": "select", "label": "默认配色方案", "default": "claude", "options": [

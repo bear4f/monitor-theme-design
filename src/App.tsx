@@ -377,6 +377,16 @@ function NavTab({ href, active, icon: Icon, children }: { href: string; active: 
   )
 }
 
+// Where the footer's two parts sit, by the site's setting: the row they share,
+// and the row the links make among themselves. Centred, the links go above the
+// text, as a signature block has them.
+const FOOTER_LAYOUTS: Record<string, { row: string; links: string }> = {
+  split: { row: "flex-wrap items-center justify-between gap-x-4", links: "" },
+  center: { row: "flex-col items-center justify-center text-center", links: "order-first justify-center" },
+  left: { row: "flex-wrap items-center justify-start gap-x-6", links: "" },
+  right: { row: "flex-wrap items-center justify-end gap-x-6", links: "justify-end" },
+}
+
 // Unified layout measure across header, main, and footer: 1280px (max-w-7xl)
 const CONTAINER_CLASS = "mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8"
 
@@ -447,6 +457,7 @@ export default function App() {
   const footerLinks = typeof config?.footer_links === "string" ? config.footer_links : ""
   const footerItems = useMemo(() => parseFooterItems(footerLinks), [footerLinks])
   const credit = config?.footer_credit === true
+  const footerLayout = FOOTER_LAYOUTS[String(config?.footer_layout)] ?? FOOTER_LAYOUTS.split
   const authed = me?.authed === true
   const access = useMemo(() => resolveAccess(authed, config), [authed, config])
 
@@ -571,7 +582,7 @@ export default function App() {
       <footer className="border-t border-border/60 bg-background/50">
         {/* Drawn once the settings are in, at the height it will have, so a
             footer the site rewrote does not show the default one first. */}
-        <div className={cn(CONTAINER_CLASS, "flex min-h-14 flex-wrap items-center justify-between gap-x-4 gap-y-2 py-5 text-xs text-muted-foreground")}>
+        <div className={cn(CONTAINER_CLASS, "flex min-h-14 gap-y-2 py-5 text-xs text-muted-foreground", footerLayout.row)}>
           {config && <>
           <span className="min-w-0 break-words">
             {footerText || site}
@@ -584,7 +595,8 @@ export default function App() {
               </>
             )}
           </span>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {(footerItems.length > 0 || credit) && (
+          <div className={cn("flex flex-wrap items-center gap-x-4 gap-y-1.5", footerLayout.links)}>
             {footerItems.map((item, i) => {
               if (!item.href) return <span key={i}>{item.label}</span>
               const mail = item.href.startsWith("mailto:")
@@ -609,6 +621,7 @@ export default function App() {
               </a>
             )}
           </div>
+          )}
           </>}
         </div>
       </footer>
