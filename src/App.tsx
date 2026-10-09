@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { SEGMENT, Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
+import { AccessProvider, resolveAccess } from "@/lib/access"
 import { api, useNodes } from "@/lib/api"
 import { Link, useNodeRoute } from "@/lib/route"
 import { THEMES } from "@/lib/themes"
@@ -419,6 +420,8 @@ export default function App() {
   const selected = sorted.find((n) => n.id === open)
   const site = me?.site_name || "Monitor"
   const notice = typeof config?.notice === "string" ? config.notice.trim() : ""
+  const authed = me?.authed === true
+  const access = useMemo(() => resolveAccess(authed, config), [authed, config])
 
   useEffect(() => {
     document.title = [selected?.name, site].filter(Boolean).join(" · ")
@@ -440,6 +443,7 @@ export default function App() {
   if (!me.public_page && !me.authed) return null
 
   return (
+    <AccessProvider value={access}>
     <div className="relative flex min-h-svh flex-col bg-background">
       {/* Zen Browser-style tactile grain overlay */}
       {grainPercent > 0 && (
@@ -554,5 +558,6 @@ export default function App() {
 
       <BackToTop />
     </div>
+    </AccessProvider>
   )
 }

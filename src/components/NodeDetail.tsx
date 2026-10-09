@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { Lock } from "lucide-react"
 import {
   Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Toggle } from "@/components/ui/toggle"
+import { useAccess } from "@/lib/access"
 import type { Node } from "@/lib/api"
 import {
   axisBytes, axisTop, bytes, clockFor, despike, ewma, quarters, rate, timeTicks, uptime,
@@ -73,12 +75,16 @@ const EMPTY: History = { metrics: [], ping: [], probes: {} }
  * arrives: a reader picking a wider range sees the chart widen rather than
  * vanish into a placeholder and return. A new node does not, since its
  * predecessor's chart would be read as its own.
+ *
+ * With `enabled` off nothing is asked for: a visitor the resource charts are
+ * withheld from has no use for the window, and it should not sit in the page.
  */
-function useHistory(id: number, hours: number, series: Series) {
+function useHistory(id: number, hours: number, series: Series, enabled = true) {
   const [state, setState] = useState<Fetched | null>(null)
   const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
+    if (!enabled) return
     let active = true
     const key = `${id}/${series}`
     fetchHistory(id, hours, series)
@@ -90,7 +96,7 @@ function useHistory(id: number, hours: number, series: Series) {
         if (active) setState({ key, hours, data: EMPTY, failed: e.message || "网络错误" })
       })
     return () => { active = false }
-  }, [id, hours, series, attempt])
+  }, [id, hours, series, attempt, enabled])
 
   // This node's window, if the one held is its; another node's is never shown.
   const own = state !== null && state.key === `${id}/${series}` ? state : null
@@ -496,6 +502,7 @@ const CHARTS = [
 ]
 
 export function NodeDetail({ node }: { node: Node }) {
+  const access = useAccess()
   const [hours, setHours] = useState(6)
   // Kept across nodes and visits: a reader comparing memory across a fleet
   // should not have to pick memory on every node.
@@ -508,12 +515,18 @@ export function NodeDetail({ node }: { node: Node }) {
   const [learned, setLearned] = useState<{ id: number; has: boolean } | null>(null)
   const known = learned !== null && learned.id === node.id ? learned.has : knownPing(node.id)
   const learn = useCallback((has: boolean) => setLearned({ id: node.id, has }), [node.id])
-  const charts = CHARTS.filter((c) => c.key !== "ping" || known === true)
-  const chart = charts.some((c) => c.key === picked) ? picked : "cpu"
-  const { data, failed, loading, retry } = useHistory(node.id, hours, "metrics")
+  // A visitor the resource panels are withheld from is left with the round
+  // trips alone, and is on that tab whatever was picked before.
+  const charts = CHARTS.filter((c) => (c.key === "ping" ? known === true : access.charts))
+  const chart = !access.charts ? "ping" : charts.some((c) => c.key === picked) ? picked : "cpu"
+  const { data, failed, loading, retry } = useHistory(node.id, hours, "metrics", access.charts)
 
   const m = node.metrics
   const away = node.last_seen ? Date.now() / 1000 - node.last_seen : 0
+  // How long it has been up or away is on the overview's first card and in the
+  // list's own column, so the heading repeats it only for a reader who has one
+  // of the two.
+  const timed = access.overview || access.metrics
 
   // The hub answers in seconds; the time axis requires milliseconds.
   const metricRows = useMemo(
@@ -546,9 +559,11 @@ export function NodeDetail({ node }: { node: Node }) {
         <h2 className="truncate text-lg font-bold tracking-tight text-foreground">{node.name}</h2>
         <Flag code={node.country} className="text-sm" />
         <Badge variant={node.online ? "success" : deployed(node) ? "destructive" : "secondary"}>
-          {node.online ? `在线 ${m ? uptime(m.uptime) : ""}` : deployed(node) ? `离线 ${away >= 60 ? uptime(away) : ""}` : "未接入"}
+          {node.online
+            ? `在线 ${m && timed ? uptime(m.uptime) : ""}`
+            : deployed(node) ? `离线 ${away >= 60 && timed ? uptime(away) : ""}` : "未接入"}
         </Badge>
-        {node.agent_version && (
+        {access.overview && node.agent_version && (
           <Badge variant="outline" className="font-normal text-muted-foreground text-xs">
             v{node.agent_version}
           </Badge>
@@ -561,12 +576,16 @@ export function NodeDetail({ node }: { node: Node }) {
 
       {/* What to draw on the left, over which window on the right. */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-4">
-        <Segmented
-          value={chart}
-          onChange={setChart}
-          options={charts.map((c) => ({ value: c.key, label: c.label }))}
-          label="图表"
-        />
+        {charts.length > 0 ? (
+          <Segmented
+            value={chart}
+            onChange={setChart}
+            options={charts.map((c) => ({ value: c.key, label: c.label }))}
+            label="图表"
+          />
+        ) : (
+          <span />
+        )}
         <Segmented
           value={hours}
           onChange={setHours}
@@ -666,6 +685,16 @@ export function NodeDetail({ node }: { node: Node }) {
         <div hidden={chart !== "ping"}>
           <Latency id={node.id} hours={hours} className="h-64" onKnown={learn} />
         </div>
+      )}
+
+      {/* The latency chart draws nothing for a node no probe pings, which for a
+          visitor without the resource panels would leave the page blank. */}
+      {!access.charts && known === false && (
+        <p className="inline-flex w-full items-center justify-center gap-1.5 py-8 text-sm text-muted-foreground">
+          <Lock className="size-3.5 shrink-0" />
+          这个节点没有延迟监控，资源图表仅管理员可见
+          <a href="/admin/" className="font-medium text-primary hover:underline">登录</a>
+        </p>
       )}
     </div>
   )

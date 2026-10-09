@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react"
-import { ChartLine } from "lucide-react"
+import { ChartLine, Lock } from "lucide-react"
 
 import { deployed, Meter, OsIcon } from "@/components/NodeMarks"
 import { Badge } from "@/components/ui/badge"
 import { Segmented } from "@/components/ui/segmented"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useAccess } from "@/lib/access"
 import type { Node } from "@/lib/api"
 import {
   bytes, cpuName, CYCLES, daysUntil, dayUsage, FOREVER, money, monthUsage, osName, pair, percent, periodStart,
@@ -63,8 +64,24 @@ function PeriodMeter({ used, today, limit, title }: { used: number; today: numbe
   )
 }
 
+/**
+ * Where the overview would be, for a visitor the site does not show it to: what
+ * is missing and where to sign in for it, so the row does not read as a node
+ * with nothing to say.
+ */
+function Withheld({ className }: { className?: string }) {
+  return (
+    <span className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground", className)}>
+      <Lock className="size-3 shrink-0" />
+      系统概览仅管理员可见
+      <a href="/admin/" className="font-medium text-primary hover:underline">登录</a>
+    </span>
+  )
+}
+
 /** The four cards: the machine, what it is doing, what it has moved, and its term. */
 function Overview({ node }: { node: Node }) {
+  const { charts } = useAccess()
   const m = node.online ? node.metrics : null
   const away = node.last_seen ? Date.now() / 1000 - node.last_seen : 0
   const days = node.expires_in !== undefined ? node.expires_in : daysUntil(node.expires_at)
@@ -115,10 +132,12 @@ function Overview({ node }: { node: Node }) {
       <Block
         title="资源监控"
         aside={
-          <Link href={`/node/${node.id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-            <ChartLine className="size-3" />
-            历史图表
-          </Link>
+          charts && (
+            <Link href={`/node/${node.id}`} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+              <ChartLine className="size-3" />
+              历史图表
+            </Link>
+          )
         }
       >
         {m && <Line label="CPU">{m.cpu.toFixed(1)}%</Line>}
@@ -170,13 +189,15 @@ function Overview({ node }: { node: Node }) {
 
 /**
  * What a row opens into: two tabs, the round trips to the node first and the
- * four cards of what it is behind them.
+ * four cards of what it is behind them. A visitor the site withholds the cards
+ * from gets the round trips alone, and a note in the cards' place.
  */
 export function RowDetails({ node }: { node: Node }) {
+  const { overview } = useAccess()
   const [learned, setLearned] = useState<boolean | null>(null)
   const has = learned ?? knownPing(node.id)
   const [tab, setTab] = useState<string | null>(null)
-  const shown = has === true ? tab ?? "latency" : "overview"
+  const shown = has === true ? (overview ? tab ?? "latency" : "latency") : "overview"
   const ready = deployed(node)
 
   useEffect(() => {
@@ -184,14 +205,19 @@ export function RowDetails({ node }: { node: Node }) {
   }, [node.id, ready])
 
   if (!ready) {
-    return <p className="px-4 py-4 text-sm text-muted-foreground">尚未接入。在后台生成安装命令并执行一次。</p>
+    return (
+      <p className="px-4 py-4 text-sm text-muted-foreground">
+        {overview ? "尚未接入。在后台生成安装命令并执行一次。" : "尚未接入。"}
+      </p>
+    )
   }
 
   return (
     <div className="space-y-3.5 px-4 py-3.5 text-xs @max-3xl:px-2">
       {has === true && (
-        <div className="flex items-center">
-          <Segmented value={shown} onChange={setTab} options={TABS} label="详情视图" />
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+          <Segmented value={shown} onChange={setTab} options={overview ? TABS : TABS.slice(0, 1)} label="详情视图" />
+          {!overview && <Withheld />}
         </div>
       )}
 
@@ -203,9 +229,20 @@ export function RowDetails({ node }: { node: Node }) {
         </Suspense>
       </div>
 
-      <div hidden={shown !== "overview" || has === undefined}>
-        <Overview node={node} />
-      </div>
+      {/* Not mounted at all for a visitor it is withheld from, rather than
+          mounted and hidden: the figures would otherwise sit in the page for
+          anyone who unhides the element. */}
+      {overview ? (
+        <div hidden={shown !== "overview" || has === undefined}>
+          <Overview node={node} />
+        </div>
+      ) : (
+        has === false && (
+          <p className="py-2 text-sm text-muted-foreground">
+            这个节点没有延迟监控。<Withheld className="ml-1 align-middle" />
+          </p>
+        )
+      )}
     </div>
   )
 }

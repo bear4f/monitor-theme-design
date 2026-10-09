@@ -15,5 +15,11 @@ export default defineConfig({
     // entry chunk whichever flags a hub's nodes need.
     assetsInlineLimit: (file) => (file.includes("/flag-icons/") ? false : undefined),
   },
-  server: { proxy: { "/api": { target: "http://127.0.0.1:9911", ws: true } } },
+  // MONITOR_HUB points the dev server at a running hub with its public page
+  // open, as theme-dev.md describes; unset, a hub on this machine.
+  server: {
+    proxy: {
+      "/api": { target: process.env.MONITOR_HUB || "http://127.0.0.1:9911", ws: true, changeOrigin: true },
+    },
+  },
 })

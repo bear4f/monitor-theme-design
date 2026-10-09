@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useAccess } from "@/lib/access"
 import type { Node } from "@/lib/api"
 import { bytes, compact, daysUntil, distro, duration, FOREVER, monthUsage, pair, percent } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -104,7 +105,12 @@ function sortNodes(nodes: Node[], field: SortField | null, order: SortOrder): No
   })
 }
 
-function Row({ node }: { node: Node }) {
+/**
+ * `span` is how many columns the table has for this reader, which the row it
+ * opens into has to cover.
+ */
+function Row({ node, span }: { node: Node; span: number }) {
+  const { metrics: full } = useAccess()
   const [open, setOpen] = useState(false)
   const m = node.online ? node.metrics : null
   const traffic = monthUsage(node)
@@ -134,6 +140,7 @@ function Row({ node }: { node: Node }) {
           </div>
         </TableCell>
         <TableCell className={COL.location}><Flag code={node.country} /></TableCell>
+        {full && <>
         <TableCell className={COL.os}>
           <span className="inline-flex items-center justify-center gap-1.5">
             <OsIcon os={node.os} />
@@ -175,10 +182,11 @@ function Row({ node }: { node: Node }) {
             label={`${compact(traffic)} / ${node.traffic_limit > 0 ? compact(node.traffic_limit) : FOREVER}`}
           />
         </TableCell>
+        </>}
       </TableRow>
       {open && (
         <TableRow className="border-b bg-muted/25 hover:bg-muted/25">
-          <TableCell colSpan={12} className="p-0! text-left whitespace-normal">
+          <TableCell colSpan={span} className="p-0! text-left whitespace-normal">
             <RowDetails node={node} />
           </TableCell>
         </TableRow>
@@ -229,10 +237,18 @@ function SortableHead({
   )
 }
 
+// What a visitor is left with when the site withholds the live columns.
+const BARE: (keyof typeof COL)[] = ["status", "name", "location"]
+
 export function ServerTable({ nodes }: { nodes: Node[] }) {
+  const { metrics: full } = useAccess()
   const [query, setQuery] = useState("")
-  const [sortField, setSortField] = useState<SortField | null>(null)
+  const [picked, setSortField] = useState<SortField | null>(null)
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc")
+  // An order picked while signed in is not kept for a visitor who cannot see
+  // the column it is by: the rows would be arranged by a figure they are not
+  // shown.
+  const sortField = full || picked === "name" ? picked : null
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -272,10 +288,12 @@ export function ServerTable({ nodes }: { nodes: Node[] }) {
   const q = query.trim().toLowerCase()
   const filteredNodes = useMemo(() => {
     if (!q) return sortedNodes
-    return sortedNodes.filter((n) => `${n.name} ${n.country} ${n.os} ${n.group ?? ""}`.toLowerCase().includes(q))
-  }, [sortedNodes, q])
+    // The system is matched only for a reader shown its column, or typing
+    // "debian" would tell a visitor which rows run it.
+    return sortedNodes.filter((n) => `${n.name} ${n.country} ${full ? n.os : ""} ${n.group ?? ""}`.toLowerCase().includes(q))
+  }, [sortedNodes, q, full])
 
-  const heads: [keyof typeof COL, ReactNode, SortField?][] = [
+  const every: [keyof typeof COL, ReactNode, SortField?][] = [
     ["status", "状态"],
     ["name", "名称", "name"],
     ["location", "位置"],
@@ -289,6 +307,7 @@ export function ServerTable({ nodes }: { nodes: Node[] }) {
     ["bar", "硬盘", "disk"],
     ["traffic", "流量", "traffic"],
   ]
+  const heads = full ? every : every.filter(([col]) => BARE.includes(col))
 
   return (
     <Card className="@container gap-0 overflow-hidden py-0">
@@ -325,6 +344,7 @@ export function ServerTable({ nodes }: { nodes: Node[] }) {
             </span>
           </div>
 
+          {full && <>
           <div
             className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/40 px-2.5 py-1"
             title="在线节点此刻的下行与上行之和"
@@ -375,6 +395,7 @@ export function ServerTable({ nodes }: { nodes: Node[] }) {
               </span>
             </span>
           </div>
+          </>}
         </div>
       </CardHeader>
 
@@ -448,13 +469,13 @@ export function ServerTable({ nodes }: { nodes: Node[] }) {
           <TableBody className="[&_td]:px-2 [&_td]:py-2 @max-3xl:[&_td]:px-0.5">
             {filteredNodes.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={12} className="py-12 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={heads.length} className="py-12 text-center text-sm text-muted-foreground">
                   没有匹配的服务器
                 </TableCell>
               </TableRow>
             ) : (
               filteredNodes.map((n) => (
-                <Row key={n.id} node={n} />
+                <Row key={n.id} node={n} span={heads.length} />
               ))
             )}
           </TableBody>
