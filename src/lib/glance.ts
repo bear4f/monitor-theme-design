@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from "react"
 
 import { api } from "@/lib/api"
 import type { History } from "@/lib/history"
+import { preloaded } from "@/lib/preload"
 
 // The last hour of each probe's round trips, for the strip under a row on the
 // list. Apart from the chart's history in history.ts: that one is fetched at
@@ -60,7 +61,10 @@ function summarise(data: History): Glance[] {
     .filter((p) => p.trend.length > 0)
 }
 
-const ask = (id: number) => api<History>(`/nodes/${id}/metrics?hours=1&points=60&series=ping`)
+// The same URL, to the character, that index.html asks for ahead of the
+// bundle: it is the key the early answer is found under.
+const path = (id: number) => `/nodes/${id}/metrics?hours=1&points=60&series=ping`
+const ask = (id: number) => api<History>(path(id))
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // As long as a probe's own interval: asked again sooner, the hour would come
@@ -72,9 +76,11 @@ const inflight = new Map<number, { at: number; promise: Promise<Glance[]> }>()
 function fetchGlance(id: number): Promise<Glance[]> {
   const hit = inflight.get(id)
   if (hit && Date.now() - hit.at < TTL) return hit.promise
-  const promise = acquire()
-    .then(() => ask(id).catch(() => pause(RETRY_MS).then(() => ask(id))).finally(release))
-    .then(summarise)
+  const queued = () => acquire().then(() => ask(id).catch(() => pause(RETRY_MS).then(() => ask(id))).finally(release))
+  // One index.html already asked for is not queued behind the others: it is
+  // in flight, and most likely answered. If it failed it takes its turn.
+  const early = preloaded<History>(`/api${path(id)}`)
+  const promise = (early ? early.catch(queued) : queued()).then(summarise)
   inflight.set(id, { at: Date.now(), promise })
   promise.catch(() => {
     if (inflight.get(id)?.promise === promise) inflight.delete(id)

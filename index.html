@@ -16,6 +16,42 @@
           document.documentElement.classList.add("dark")
       } catch (e) {}
     </script>
+    <script>
+      // The hub's answers, asked for now rather than once the bundle below has
+      // downloaded, parsed and mounted: on a first visit that is most of a
+      // second in which these would otherwise not have started. The app takes
+      // each from window.__preload by its URL (src/lib/preload.ts) and falls
+      // back to asking itself for any that failed or is not here.
+      ;(function () {
+        var pre = (window.__preload = {})
+        var ask = function (url) {
+          var answer = fetch(url).then(function (res) {
+            if (!res.ok) throw new Error(String(res.status))
+            return res.json()
+          })
+          // Marked handled: whoever takes it attaches its own handler later.
+          answer.catch(function () {})
+          return (pre[url] = answer)
+        }
+        ask("/api/me")
+        var nodes = ask("/api/nodes")
+        var config = ask("/api/themes/%THEME_SHORT%/config").catch(function () { return {} })
+        // The strip under each row of the list: an hour of pings per node, the
+        // URL the one src/lib/glance.ts builds. Not asked for where the site
+        // has turned the strips off. Twenty-four at most, from the top of the
+        // list: the hub answered seventeen at once without refusing any and
+        // thirty-four with one refused, and the app asks again for a refusal
+        // and queues whatever is past the limit.
+        Promise.all([nodes, config]).then(function (got) {
+          if (got[1].row_latency === false) return
+          got[0].nodes
+            .filter(function (n) { return n.cpu_cores > 0 || n.mem_total > 0 })
+            .sort(function (a, b) { return a.sort - b.sort || a.id - b.id })
+            .slice(0, 24)
+            .forEach(function (n) { ask("/api/nodes/" + n.id + "/metrics?hours=1&points=60&series=ping") })
+        }).catch(function () {})
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

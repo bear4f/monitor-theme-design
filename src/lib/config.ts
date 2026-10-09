@@ -1,5 +1,7 @@
 import manifest from "../../theme.json"
 
+import { preloaded } from "./preload.ts"
+
 export type ConfigField = {
   key: string
   type: string
@@ -32,8 +34,15 @@ export const fields = ((manifest as { config?: (ConfigField | { type: "title"; l
 export async function loadConfig(): Promise<Record<string, unknown>> {
   let saved: Record<string, unknown> = {}
   try {
-    const res = await fetch(`/api/themes/${manifest.short}/config`)
-    if (res.ok) saved = await res.json()
+    const url = `/api/themes/${manifest.short}/config`
+    // Started by index.html while the bundle was downloading; a failure there
+    // is a 401 or a 404 as often as not, and reads as nothing saved.
+    const early = preloaded<Record<string, unknown>>(url)
+    if (early) saved = await early
+    else {
+      const res = await fetch(url)
+      if (res.ok) saved = await res.json()
+    }
   } catch {
     // 断网同样按默认值
   }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react"
 
+import { preloaded } from "./preload.ts"
+
 export type Metrics = {
   uptime: number
   cpu: number
@@ -76,6 +78,17 @@ class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  // A plain read index.html already started is taken from there. One that
+  // failed is asked for again here, so the caller gets the hub's own refusal
+  // with its status rather than whatever the early attempt threw.
+  const early = init ? undefined : preloaded<T>(`/api${path}`)
+  if (early) {
+    try {
+      return await early
+    } catch {
+      // Falls through to the request below.
+    }
+  }
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: init?.body ? { "content-type": "application/json", ...init?.headers } : init?.headers,
