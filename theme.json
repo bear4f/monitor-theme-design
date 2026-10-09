@@ -2,7 +2,7 @@
   "name": "monitor-theme-design",
   "short": "Design",
   "description": "Fork 自 tom2almighty/monitor-theme-design，增加访客权限：未登录只能看网络延迟，系统概览与资源图表登录后可见。保留 tweakcn 配色、Zen Browser 噪点磨砂质感、深浅模式与实时换肤",
-  "version": "2.2.2",
+  "version": "2.2.3",
   "author": "tom2almighty",
   "url": "https://github.com/bear4f/monitor-theme-design",
   "config": [

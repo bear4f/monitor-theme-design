@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Lock } from "lucide-react"
 import {
   Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
@@ -690,11 +689,7 @@ export function NodeDetail({ node }: { node: Node }) {
       {/* The latency chart draws nothing for a node no probe pings, which for a
           visitor without the resource panels would leave the page blank. */}
       {!access.charts && known === false && (
-        <p className="inline-flex w-full items-center justify-center gap-1.5 py-8 text-sm text-muted-foreground">
-          <Lock className="size-3.5 shrink-0" />
-          这个节点没有延迟监控，资源图表仅管理员可见
-          <a href="/admin/" className="font-medium text-primary hover:underline">登录</a>
-        </p>
+        <p className="py-8 text-center text-sm text-muted-foreground">这个节点没有延迟监控</p>
       )}
     </div>
   )

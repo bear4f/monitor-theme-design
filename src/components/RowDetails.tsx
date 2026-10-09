@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState, type ReactNode } from "react"
-import { ChartLine, Lock } from "lucide-react"
+import { ChartLine } from "lucide-react"
 
 import { deployed, Meter, OsIcon } from "@/components/NodeMarks"
 import { Badge } from "@/components/ui/badge"
@@ -61,21 +61,6 @@ function PeriodMeter({ used, today, limit, title }: { used: number; today: numbe
     <Meter pct={pct} title={title} className="my-1.5 h-2">
       {today > 0 && <div className="absolute inset-y-0 right-0 min-w-0.5 rounded-r-full bg-background/45" style={{ width: `${share}%` }} />}
     </Meter>
-  )
-}
-
-/**
- * Where the overview would be, for a visitor the site does not show it to: what
- * is missing and where to sign in for it, so the row does not read as a node
- * with nothing to say.
- */
-function Withheld({ className }: { className?: string }) {
-  return (
-    <span className={cn("inline-flex items-center gap-1.5 text-xs text-muted-foreground", className)}>
-      <Lock className="size-3 shrink-0" />
-      系统概览仅管理员可见
-      <a href="/admin/" className="font-medium text-primary hover:underline">登录</a>
-    </span>
   )
 }
 
@@ -190,7 +175,7 @@ function Overview({ node }: { node: Node }) {
 /**
  * What a row opens into: two tabs, the round trips to the node first and the
  * four cards of what it is behind them. A visitor the site withholds the cards
- * from gets the round trips alone, and a note in the cards' place.
+ * from gets the round trips alone, with nothing said of what is not shown.
  */
 export function RowDetails({ node }: { node: Node }) {
   const { overview } = useAccess()
@@ -215,9 +200,8 @@ export function RowDetails({ node }: { node: Node }) {
   return (
     <div className="space-y-3.5 px-4 py-3.5 text-xs @max-3xl:px-2">
       {has === true && (
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+        <div className="flex items-center">
           <Segmented value={shown} onChange={setTab} options={overview ? TABS : TABS.slice(0, 1)} label="详情视图" />
-          {!overview && <Withheld />}
         </div>
       )}
 
@@ -237,11 +221,7 @@ export function RowDetails({ node }: { node: Node }) {
           <Overview node={node} />
         </div>
       ) : (
-        has === false && (
-          <p className="py-2 text-sm text-muted-foreground">
-            这个节点没有延迟监控。<Withheld className="ml-1 align-middle" />
-          </p>
-        )
+        has === false && <p className="py-2 text-sm text-muted-foreground">这个节点没有延迟监控。</p>
       )}
     </div>
   )
