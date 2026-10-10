@@ -17,10 +17,10 @@ export const CYCLE_MONTHS: Record<string, number> = {
 }
 
 /**
- * What one unit of each currency is in yuan. Fixed, since a theme is a static
- * page with no business asking a third party for rates from every visitor's
- * browser; totals are therefore approximate, and say so. A site overrides any
- * of them, or adds a currency, in the theme settings.
+ * What one unit of each currency is in yuan, as of `RATES_DATE`. The table the
+ * totals fall back on where the day's rates (lib/fx.ts) are switched off or
+ * cannot be had; a site can also fix any currency itself in the theme
+ * settings, which wins over both.
  */
 export const RATES_DATE = "2026-09-30"
 
@@ -38,9 +38,9 @@ export const DEFAULT_RATES: Record<string, number> = {
   RUB: 0.0795,
 }
 
-/** The built-in rates with the site's own lines over them: `USD = 7.1`, one a line. */
-export function parseRates(text: string): Record<string, number> {
-  const rates = { ...DEFAULT_RATES }
+/** The rates a site wrote into its settings: `USD = 7.1`, one a line. Lines that are not one are passed over. */
+export function manualRates(text: string): Record<string, number> {
+  const rates: Record<string, number> = {}
   for (const line of text.split("\n")) {
     const match = line.match(/^\s*([A-Za-z]{3})\s*[=:：＝]\s*([0-9]*\.?[0-9]+)\s*$/)
     if (!match) continue
@@ -48,6 +48,15 @@ export function parseRates(text: string): Record<string, number> {
     if (rate > 0 && Number.isFinite(rate)) rates[match[1].toUpperCase()] = rate
   }
   return rates
+}
+
+/**
+ * The rates the bill is worked out with: the built-in table, the day's rates
+ * over it where there are any, and the site's own lines over both. A yuan is a
+ * yuan whatever anyone says.
+ */
+export function parseRates(text: string, live: Record<string, number> = {}): Record<string, number> {
+  return { ...DEFAULT_RATES, ...live, ...manualRates(text), CNY: 1 }
 }
 
 const DAY = 86_400_000

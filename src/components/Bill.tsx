@@ -8,8 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import type { Node } from "@/lib/api"
 import {
-  addMonths, billOf, cny, hubToday, parseRates, RATES_DATE, renewalsBetween, summarise, type Bill as NodeBill,
+  addMonths, billOf, cny, hubToday, manualRates, parseRates, RATES_DATE, renewalsBetween, summarise, type Bill as NodeBill,
 } from "@/lib/bill"
+import { useLiveRates } from "@/lib/fx"
 import { CYCLES, money } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -70,8 +71,10 @@ type SortKey = "due" | "monthly"
  * is worked out from the price, cycle and expiry the nodes already carry, so
  * the page asks the hub for nothing.
  */
-export function Bill({ nodes, rates: rateLines }: { nodes: Node[]; rates: string }) {
-  const rates = useMemo(() => parseRates(rateLines), [rateLines])
+export function Bill({ nodes, rates: rateLines, live: liveOn }: { nodes: Node[]; rates: string; live: boolean }) {
+  const { live, failed } = useLiveRates(liveOn)
+  const rates = useMemo(() => parseRates(rateLines, live?.rates), [rateLines, live])
+  const fixed = useMemo(() => manualRates(rateLines), [rateLines])
   const today = useMemo(() => hubToday(nodes), [nodes])
   const bills = useMemo(() => nodes.map((n) => billOf(n, rates, today)), [nodes, rates, today])
   const summary = useMemo(() => summarise(bills, today), [bills, today])
@@ -86,7 +89,7 @@ export function Bill({ nodes, rates: rateLines }: { nodes: Node[]; rates: string
     () => renewalsBetween(bills, `${month}-01`, addMonths(`${month}-01`, 1)),
     [bills, month],
   )
-  const byDay = useMemo(() => {
+  const dueOn = useMemo(() => {
     const map = new Map<string, number>()
     for (const r of renewals) map.set(r.date, (map.get(r.date) ?? 0) + 1)
     return map
@@ -113,10 +116,12 @@ export function Bill({ nodes, rates: rateLines }: { nodes: Node[]; rates: string
   // The rates the totals were made with, for whoever wonders why the sum is
   // not the one their bank would give. Only the currencies actually in use.
   const used = [...new Set(bills.filter((b) => b.cny !== null && b.currency !== "CNY").map((b) => b.currency))].sort()
-  const ratesNote = [
-    used.length > 0 && `外币按固定汇率折算：${used.map((c) => `1 ${c} = ¥${rates[c]}`).join("，")}（内置汇率取自 ${RATES_DATE}，可在主题设置里修改）`,
-    summary.unrated.length > 0 && `${summary.unrated.join("、")} 没有汇率，未计入合计`,
-  ].filter(Boolean).join("；")
+  // Where each of them came from: the site's own line, the day's rates, or
+  // the built-in table for a currency neither has.
+  const byHand = used.filter((c) => fixed[c] !== undefined)
+  const byDay = used.filter((c) => fixed[c] === undefined && live?.rates[c] !== undefined)
+  const builtIn = used.filter((c) => fixed[c] === undefined && live?.rates[c] === undefined)
+  const some = (codes: string[]) => (codes.length === used.length ? "" : `${codes.join("、")} `)
 
   const { lead, days } = monthShape(month)
   const share = summary.top && summary.monthly > 0 ? (summary.top.monthly! / summary.monthly) * 100 : 0
@@ -164,7 +169,27 @@ export function Bill({ nodes, rates: rateLines }: { nodes: Node[]; rates: string
               note={summary.top ? `月均 ${cny(summary.top.monthly!)} · 占比 ${share.toFixed(1)}%` : "还没有填了价格的节点"}
             />
           </div>
-          {ratesNote && <p className="text-[11px] leading-relaxed text-muted-foreground">{ratesNote}</p>}
+          {(used.length > 0 || summary.unrated.length > 0) && (
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              {used.length > 0 && (
+                <>
+                  外币折算：{used.map((c) => `1 ${c} = ¥${Number(rates[c].toFixed(4))}`).join("，")}。
+                  {byDay.length > 0 && live && (
+                    <>
+                      {some(byDay)}按 {live.date} 的汇率，来源{" "}
+                      <a href={live.source.url} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-foreground">
+                        {live.source.name}
+                      </a>
+                      。
+                    </>
+                  )}
+                  {builtIn.length > 0 && `${some(builtIn)}${failed ? "没能取到当天的汇率，暂按" : "按"}内置参考汇率（${RATES_DATE}）。`}
+                  {byHand.length > 0 && `${some(byHand)}按主题设置里填写的汇率。`}
+                </>
+              )}
+              {summary.unrated.length > 0 && `${summary.unrated.join("、")} 没有汇率，未计入合计。`}
+            </p>
+          )}
         </CardContent>
       </Card>
 
@@ -200,7 +225,7 @@ export function Bill({ nodes, rates: rateLines }: { nodes: Node[]; rates: string
               {Array.from({ length: lead }, (_, i) => <div key={`lead${i}`} />)}
               {Array.from({ length: days }, (_, i) => {
                 const date = `${month}-${String(i + 1).padStart(2, "0")}`
-                const count = byDay.get(date) ?? 0
+                const count = dueOn.get(date) ?? 0
                 const picked = day === date
                 const cell = cn(
                   "flex h-12 flex-col items-start rounded-lg border px-1.5 py-1 text-left text-xs transition-colors",

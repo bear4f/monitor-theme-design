@@ -469,6 +469,7 @@ export default function App() {
   // gets the list, as they would at any address the theme does not know.
   const bill = billRoute && access.bill
   const billRates = typeof config?.bill_rates === "string" ? config.bill_rates : ""
+  const billLive = config?.bill_live_rates === true
 
   useEffect(() => {
     document.title = [bill ? "账单" : selected?.name, site].filter(Boolean).join(" · ")
@@ -573,7 +574,7 @@ export default function App() {
           <ServerTableSkeleton />
         ) : bill ? (
           <Suspense fallback={<Skeleton className="h-96" />}>
-            <Bill nodes={sorted} rates={billRates} />
+            <Bill nodes={sorted} rates={billRates} live={billLive} />
           </Suspense>
         ) : open === null ? (
           sorted.length === 0 ? (
