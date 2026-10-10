@@ -1,3 +1,5 @@
+import { useState } from "react"
+
 import { Skeleton } from "@/components/ui/skeleton"
 import type { Glance } from "@/lib/glance"
 import { cn } from "@/lib/utils"
@@ -5,16 +7,21 @@ import { cn } from "@/lib/utils"
 const W = 100
 const H = 16
 
+const HHMM = new Intl.DateTimeFormat("zh-CN", { hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+
 /**
- * An hour of one probe as a line, with no axis and nothing to hover: the shape
- * is the whole message. A timeout breaks the line rather than being bridged.
+ * An hour of one probe as a line with no axis: the shape is most of the
+ * message. A timeout breaks the line rather than being bridged. Pointing at it
+ * names the bucket under the pointer -- when it was and what it measured --
+ * which is what a reader wants once the shape has shown them a spike.
  *
  * The scale is the probe's own range, but never narrower than 20 ms or a
  * quarter of its level. Fitted exactly, a route steady at 29 ms and wobbling
  * by two would fill the strip as tall as one swinging by two hundred, and the
  * reader could not tell the calm row from the troubled one.
  */
-function Sparkline({ values, className }: { values: (number | null)[]; className?: string }) {
+function Sparkline({ values, times, className }: { values: (number | null)[]; times: number[]; className?: string }) {
+  const [at, setAt] = useState<number | null>(null)
   const answered = values.filter((v): v is number => v !== null)
   if (answered.length < 2) return <span className={className} />
   const low = Math.min(...answered)
@@ -22,28 +29,57 @@ function Sparkline({ values, className }: { values: (number | null)[]; className
   const span = Math.max(high - low, 20, low / 4)
   // Centred in the widened span, so a steady line runs through the middle.
   const base = low - (span - (high - low)) / 2
-  const x = (i: number) => (i * W) / (values.length - 1)
+  const last = values.length - 1
+  const x = (i: number) => (i * W) / last
   const y = (v: number) => H - 1.5 - ((v - base) / span) * (H - 3)
   const runs: string[][] = [[]]
   values.forEach((v, i) => {
     if (v === null) runs.push([])
     else runs[runs.length - 1].push(`${x(i).toFixed(1)},${y(v).toFixed(1)}`)
   })
+  const point = at === null ? null : values[at]
+  // The label hangs over the point, except near either end, where centred it
+  // would run past the strip and under the neighbouring probe.
+  const side = at === null ? "" : at < last * 0.15 ? "left-0" : at > last * 0.85 ? "right-0" : "left-1/2 -translate-x-1/2"
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className={className} aria-hidden>
-      {runs.filter((run) => run.length > 1).map((run, i) => (
-        <polyline
-          key={i}
-          points={run.join(" ")}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.25"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-    </svg>
+    // Padded and pulled back by the same amount: the line is 16px tall, and a
+    // target that thin is lost by any hand that is not perfectly level.
+    <span
+      className={cn("relative -my-1.5 block py-1.5", className)}
+      onPointerMove={(e) => {
+        const box = e.currentTarget.getBoundingClientRect()
+        setAt(Math.min(last, Math.max(0, Math.round(((e.clientX - box.left) / box.width) * last))))
+      }}
+      onPointerLeave={() => setAt(null)}
+    >
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="block size-full" aria-hidden>
+        {runs.filter((run) => run.length > 1).map((run, i) => (
+          <polyline
+            key={i}
+            points={run.join(" ")}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.25"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </svg>
+      {at !== null && (
+        <span className="pointer-events-none absolute inset-y-1.5" style={{ left: `${x(at)}%` }}>
+          <span className="absolute inset-y-0 -left-px w-px bg-primary/50" />
+          {/* A dot rather than an SVG circle: the drawing is stretched to the strip's width, and a circle with it. */}
+          {point !== null && (
+            <span className="absolute -left-[3px] size-1.5 -translate-y-1/2 rounded-full bg-primary ring-2 ring-background" style={{ top: `${(y(point) / H) * 100}%` }} />
+          )}
+          <span className={cn("tnum absolute bottom-full z-10 mb-1.5 rounded-md border border-border bg-popover px-2 py-1 text-center text-[11px] leading-4 whitespace-nowrap text-popover-foreground shadow-md", side)}>
+            <span className="block text-muted-foreground">{HHMM.format(times[at] * 1_000)}</span>
+            <span className={cn("block font-semibold", point === null && "text-destructive")}>{point === null ? "超时" : `${point} ms`}</span>
+          </span>
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -59,17 +95,14 @@ export function RowLatency({ probes }: { probes: Glance[] | null }) {
       {probes === null
         ? [0, 1, 2].map((i) => <Skeleton key={i} className="my-0.5 h-3 w-full max-w-40 rounded-sm opacity-50" />)
         : probes.map((p) => (
-            <div
-              key={p.id}
-              className="flex min-w-0 items-center gap-2 @max-3xl:gap-1"
-              title={`${p.name} · 最近一小时${p.ms === null ? "全部超时" : ` · 最新 ${p.ms} ms`} · 丢包 ${p.loss.toFixed(1)}%`}
-            >
+            <div key={p.id} className="flex min-w-0 items-center gap-2 @max-3xl:gap-1">
               <span className="w-16 shrink-0 truncate text-left text-muted-foreground @max-3xl:w-auto @max-3xl:max-w-12">{p.name}</span>
               <span className={cn("tnum w-11 shrink-0 text-right font-medium @max-3xl:w-auto", p.ms === null ? "text-destructive" : "text-foreground/80")}>
                 {p.ms === null ? "超时" : `${p.ms} ms`}
               </span>
-              <Sparkline values={p.trend} className="h-4 min-w-0 flex-1 text-primary/55 @max-3xl:hidden" />
+              <Sparkline values={p.trend} times={p.times} className="h-7 min-w-0 flex-1 text-primary/55 @max-3xl:hidden" />
               <span
+                title="最近一小时的丢包率"
                 className={cn(
                   "tnum w-9 shrink-0 text-right @max-3xl:hidden",
                   p.loss >= 5 ? "font-medium text-destructive" : p.loss >= 1 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground/70",

@@ -18,6 +18,8 @@ export type Glance = {
   loss: number
   /** Every bucket in order, null where all of it timed out. */
   trend: (number | null)[]
+  /** When each bucket of `trend` was, in epoch seconds, for the reader pointing at one. */
+  times: number[]
 }
 
 // How many windows are asked for at once. The hub builds only a few at a time
@@ -56,6 +58,7 @@ function summarise(data: History): Glance[] {
         ms: trend.findLast((v) => v !== null) ?? null,
         loss: data.loss?.[id] ?? 0,
         trend,
+        times: points.map((p) => p.ts),
       }
     })
     .filter((p) => p.trend.length > 0)
@@ -123,7 +126,9 @@ function restore() {
     const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as { at: number; nodes: Record<string, Glance[]> } | null
     if (!saved || typeof saved.at !== "number" || Date.now() - saved.at > KEEP_MS) return
     for (const [id, probes] of Object.entries(saved.nodes ?? {})) {
-      if (!Array.isArray(probes)) continue
+      // An entry an older build stored has no times; a line that cannot say
+      // when its points were is not drawn from it.
+      if (!Array.isArray(probes) || !probes.every((p) => Array.isArray(p.trend) && Array.isArray(p.times) && p.times.length === p.trend.length)) continue
       shown.set(Number(id), probes)
       stale.add(Number(id))
     }
