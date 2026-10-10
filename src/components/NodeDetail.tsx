@@ -35,7 +35,14 @@ const Y_WIDTH = 68
 // Hue alone separates the probes. A dash pattern would not: once every ping in a
 // day is on the chart its period is shorter than the jitter, and dotted and dashed
 // lines both read as texture.
-const PALETTE = [1, 2, 3, 4, 5].map((i) => `var(--color-chart-${i})`)
+//
+// Eight of them, the preset's `series` set (lib/themes.ts), assigned in order
+// as the probes come. Not the five `chart` tokens the panels below use one at
+// a time: those were never chosen to be told apart, and in the default preset
+// the first and the fifth are the same terracotta, so of six probes three drew
+// in one colour. A ninth probe starts the set again; its name on the legend
+// and in the tooltip is then what tells it from the first.
+const PALETTE = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => `var(--series-${i})`)
 
 // recharts paints its tooltip white unless told otherwise, which is a white box
 // on the dark theme. Shaped like shadcn's chart tooltip: the popover surface,

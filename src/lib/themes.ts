@@ -8,6 +8,15 @@ export interface ThemeToken {
   name: string
   desc: string
   accentColor: string // Preview swatch color
+  /**
+   * Besides the tweakcn tokens, each mode carries `series-1` to `series-8`: the
+   * colours a chart gives several lines at once, assigned in that order. They
+   * are a set, not eight separate choices -- the order is what keeps
+   * neighbouring lines apart for a reader with a colour vision deficiency, and
+   * each mode's steps were checked against that mode's card surface. Change
+   * one and the set has to be validated again. `chart-1` to `chart-5` are
+   * tweakcn's own and colour the single-series panels.
+   */
   light: Record<string, string>
   dark: Record<string, string>
 }
@@ -43,6 +52,14 @@ export const THEMES: ThemeToken[] = [
       "chart-3": "oklch(0.72 0.14 75)",
       "chart-4": "oklch(0.56 0.12 250)",
       "chart-5": "oklch(0.5608 0.1348 42.0584)",
+      "series-1": "#b05730",
+      "series-2": "#2a78d6",
+      "series-3": "#1baf7a",
+      "series-4": "#eda100",
+      "series-5": "#e87ba4",
+      "series-6": "#008300",
+      "series-7": "#4a3aa7",
+      "series-8": "#e34948",
     },
     dark: {
       background: "oklch(0.2679 0.0036 106.6427)",
@@ -69,6 +86,14 @@ export const THEMES: ThemeToken[] = [
       "chart-3": "oklch(0.78 0.13 75)",
       "chart-4": "oklch(0.68 0.11 250)",
       "chart-5": "oklch(0.72 0.13 350)",
+      "series-1": "#b2572f",
+      "series-2": "#3987e5",
+      "series-3": "#199e70",
+      "series-4": "#c98500",
+      "series-5": "#d55181",
+      "series-6": "#008300",
+      "series-7": "#9085e9",
+      "series-8": "#e66767",
     },
   },
   {
@@ -101,6 +126,14 @@ export const THEMES: ThemeToken[] = [
       "chart-3": "oklch(0.6200 0.1500 150.0000)",
       "chart-4": "oklch(0.6500 0.2000 310.0000)",
       "chart-5": "oklch(0.5600 0.1800 25.0000)",
+      "series-1": "#2a78d6",
+      "series-2": "#eb6834",
+      "series-3": "#1baf7a",
+      "series-4": "#eda100",
+      "series-5": "#e87ba4",
+      "series-6": "#008300",
+      "series-7": "#4a3aa7",
+      "series-8": "#e34948",
     },
     dark: {
       background: "oklch(0 0 0)",
@@ -127,6 +160,14 @@ export const THEMES: ThemeToken[] = [
       "chart-3": "oklch(0.7200 0.1500 150.0000)",
       "chart-4": "oklch(0.7500 0.1800 310.0000)",
       "chart-5": "oklch(0.6800 0.1600 25.0000)",
+      "series-1": "#3987e5",
+      "series-2": "#d95926",
+      "series-3": "#199e70",
+      "series-4": "#c98500",
+      "series-5": "#d55181",
+      "series-6": "#008300",
+      "series-7": "#9085e9",
+      "series-8": "#e66767",
     },
   },
   {
@@ -159,6 +200,14 @@ export const THEMES: ThemeToken[] = [
       "chart-3": "oklch(0.8214 0.1600 82.5337)",
       "chart-4": "oklch(0.7064 0.1822 151.7125)",
       "chart-5": "oklch(0.5919 0.2186 10.5826)",
+      "series-1": "#2a78d6",
+      "series-2": "#eb6834",
+      "series-3": "#1baf7a",
+      "series-4": "#eda100",
+      "series-5": "#e87ba4",
+      "series-6": "#008300",
+      "series-7": "#4a3aa7",
+      "series-8": "#e34948",
     },
     dark: {
       background: "oklch(0 0 0)",
@@ -185,6 +234,14 @@ export const THEMES: ThemeToken[] = [
       "chart-3": "oklch(0.8214 0.1600 82.5337)",
       "chart-4": "oklch(0.7064 0.1822 151.7125)",
       "chart-5": "oklch(0.5919 0.2186 10.5826)",
+      "series-1": "#3987e5",
+      "series-2": "#d95926",
+      "series-3": "#199e70",
+      "series-4": "#c98500",
+      "series-5": "#d55181",
+      "series-6": "#008300",
+      "series-7": "#9085e9",
+      "series-8": "#e66767",
     },
   },
   {
@@ -217,6 +274,14 @@ export const THEMES: ThemeToken[] = [
       "chart-3": "oklch(0.5500 0.2200 263)",
       "chart-4": "oklch(0.4900 0.2200 264)",
       "chart-5": "oklch(0.4200 0.1800 266)",
+      "series-1": "#2a78d6",
+      "series-2": "#eb6834",
+      "series-3": "#1baf7a",
+      "series-4": "#eda100",
+      "series-5": "#e87ba4",
+      "series-6": "#008300",
+      "series-7": "#4a3aa7",
+      "series-8": "#e34948",
     },
     dark: {
       background: "oklch(0.1450 0 0)",
@@ -243,6 +308,14 @@ export const THEMES: ThemeToken[] = [
       "chart-3": "oklch(0.5500 0.2200 263)",
       "chart-4": "oklch(0.4900 0.2200 264)",
       "chart-5": "oklch(0.4200 0.1800 266)",
+      "series-1": "#3987e5",
+      "series-2": "#d95926",
+      "series-3": "#199e70",
+      "series-4": "#c98500",
+      "series-5": "#d55181",
+      "series-6": "#008300",
+      "series-7": "#9085e9",
+      "series-8": "#e66767",
     },
   },
 ]
