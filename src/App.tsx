@@ -574,7 +574,7 @@ export default function App() {
           <ServerTableSkeleton />
         ) : bill ? (
           <Suspense fallback={<Skeleton className="h-96" />}>
-            <Bill nodes={sorted} rates={billRates} live={billLive} />
+            <Bill nodes={sorted} rates={billRates} live={billLive} authed={authed} />
           </Suspense>
         ) : open === null ? (
           sorted.length === 0 ? (

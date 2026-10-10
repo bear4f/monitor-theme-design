@@ -1,13 +1,15 @@
 /// <reference types="node" />
 import assert from "node:assert/strict"
 import type { Node } from "./api.ts"
-import { addMonths, billOf, hubToday, manualRates, parseRates, renewalsBetween, summarise } from "./bill.ts"
+import { addMonths, billOf, cycleMonths, hubToday, manualRates, parseRates, renewalsBetween, summarise } from "./bill.ts"
 import { invert, SOURCES } from "./fx.ts"
 
 assert.equal(addMonths("2026-01-31", 1), "2026-02-28")
 assert.equal(addMonths("2026-01-31", 2), "2026-03-31")
 assert.equal(addMonths("2026-11-21", 12), "2027-11-21")
 assert.equal(addMonths("2024-02-29", 12), "2025-02-28")
+
+assert.deepEqual(["yearly", "once", "18m", "", "0m", "weekly"].map(cycleMonths), [12, 0, 18, 1, 1, 1])
 
 const rates = parseRates("usd = 7\nCAD：5\nnonsense\nEUR = 0\n")
 assert.equal(rates.USD, 7)

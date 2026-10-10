@@ -1,12 +1,12 @@
 import { useMemo, useState, type ReactNode } from "react"
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from "lucide-react"
+import { ArrowDown, ArrowUp, Check, ChevronLeft, ChevronRight, Undo2 } from "lucide-react"
 
 import { deployed, Dot, Flag } from "@/components/NodeMarks"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import type { Node } from "@/lib/api"
+import { api, type Node } from "@/lib/api"
 import {
   addMonths, billOf, cny, hubToday, manualRates, parseRates, RATES_DATE, renewalsBetween, summarise, type Bill as NodeBill,
 } from "@/lib/bill"
@@ -20,7 +20,7 @@ function Price({ bill, className }: { bill: NodeBill; className?: string }) {
   return (
     <span className={cn("tnum", className)}>
       {money(bill.price, bill.currency)}
-      <span className="font-normal text-muted-foreground"> / {CYCLES[bill.node.billing_cycle] ?? "月付"}</span>
+      <span className="font-normal text-muted-foreground"> / {CYCLES[bill.node.billing_cycle] ?? (bill.months > 1 ? `${bill.months} 个月付` : "月付")}</span>
     </span>
   )
 }
@@ -65,17 +65,65 @@ function Remaining({ days }: { days: number | null }) {
 
 type SortKey = "due" | "monthly"
 
+/** A node's expiry as the owner last moved it from this page: where it was and where it went. */
+type Moved = { id: number; name: string; from: string; to: string }
+
 /**
  * What the fleet costs and when it next has to be paid for: the totals, a
  * calendar of renewals a month at a time, and each node's own line. Everything
  * is worked out from the price, cycle and expiry the nodes already carry, so
  * the page asks the hub for nothing.
  */
-export function Bill({ nodes, rates: rateLines, live: liveOn }: { nodes: Node[]; rates: string; live: boolean }) {
+export function Bill({
+  nodes: reported, rates: rateLines, live: liveOn, authed,
+}: { nodes: Node[]; rates: string; live: boolean; authed: boolean }) {
+  // Renewing a node here writes its new expiry to the hub, which sends it back
+  // in the next snapshot, a couple of seconds on. Until it does the date just
+  // written is laid over the old one, so the row leaves the month at the click
+  // and not after a pause in which it looks as though nothing happened. Laid
+  // over only while the hub still reports the date it had when the write was
+  // made: once it reports anything else -- the new date, or one somebody set
+  // from the panel since -- the hub's word stands.
+  const [written, setWritten] = useState<Record<number, { was: string | null; to: string }>>({})
+  const nodes = useMemo(
+    () => reported.map((n) => (written[n.id] !== undefined && written[n.id].was === n.expires_at ? { ...n, expires_at: written[n.id].to } : n)),
+    [reported, written],
+  )
+  // The row being asked about, the one being written, what the hub said if it
+  // refused, and the last move made, which is offered back as an undo.
+  const [asking, setAsking] = useState<number | null>(null)
+  const [busy, setBusy] = useState<number | null>(null)
+  const [refused, setRefused] = useState<{ id: number; message: string } | null>(null)
+  const [moved, setMoved] = useState<Moved | null>(null)
+
+  /**
+   * Sets one node's expiry on the hub, through the endpoint its own panel
+   * saves a node with. Only the date is sent, and the hub leaves every setting
+   * a request omits as it was.
+   */
+  const setExpiry = async (move: Moved, undo = false) => {
+    setBusy(move.id)
+    setRefused(null)
+    try {
+      const to = undo ? move.from : move.to
+      await api(`/nodes/${move.id}`, { method: "PUT", body: JSON.stringify({ expires_at: to }) })
+      const was = reported.find((n) => n.id === move.id)?.expires_at ?? null
+      setWritten((w) => ({ ...w, [move.id]: { was, to } }))
+      setMoved(undo ? null : move)
+      setAsking(null)
+    } catch (e) {
+      setRefused({ id: move.id, message: (e instanceof Error && e.message) || "网络错误" })
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const { live, failed } = useLiveRates(liveOn)
   const rates = useMemo(() => parseRates(rateLines, live?.rates), [rateLines, live])
   const fixed = useMemo(() => manualRates(rateLines), [rateLines])
-  const today = useMemo(() => hubToday(nodes), [nodes])
+  // From the hub's own figures, not the overlaid ones: a date this page wrote
+  // no longer agrees with the days-left the hub sent beside the old one.
+  const today = useMemo(() => hubToday(reported), [reported])
   const bills = useMemo(() => nodes.map((n) => billOf(n, rates, today)), [nodes, rates, today])
   const summary = useMemo(() => summarise(bills, today), [bills, today])
 
@@ -100,6 +148,7 @@ export function Bill({ nodes, rates: rateLines, live: liveOn }: { nodes: Node[];
   const turn = (by: number) => {
     setMonth(addMonths(`${month}-01`, by).slice(0, 7))
     setDay(null)
+    setAsking(null)
   }
 
   const rows = useMemo(() => {
@@ -272,12 +321,37 @@ export function Bill({ nodes, rates: rateLines, live: liveOn }: { nodes: Node[];
                 )}
               </div>
             </div>
+            {moved && (
+              <p className="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-emerald-500/25 bg-emerald-500/10 px-3.5 py-2 text-xs text-foreground">
+                <Check className="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span className="min-w-0">
+                  <span className="font-medium">{moved.name}</span> 已续费，到期日 <span className="tnum">{moved.from}</span> → <span className="tnum font-medium">{moved.to}</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void setExpiry(moved, true)}
+                  className="ml-auto inline-flex cursor-pointer items-center gap-1 font-medium text-primary hover:underline disabled:opacity-50"
+                >
+                  <Undo2 className="size-3" />
+                  撤销
+                </button>
+                {refused?.id === moved.id && <span role="alert" className="w-full text-destructive">撤销失败：{refused.message}</span>}
+              </p>
+            )}
             {listed.length === 0 ? (
               <p className="rounded-lg border border-dashed border-border/70 py-10 text-center text-sm text-muted-foreground">这个月没有到期的节点</p>
             ) : (
               <ul className="divide-y divide-border/60 rounded-lg border border-border/80 bg-card shadow-xs">
-                {listed.map((r) => (
-                  <li key={`${r.bill.node.id}/${r.date}`} className="flex items-center gap-3 px-3.5 py-2.5 text-sm">
+                {listed.map((r) => {
+                  // Offered to the signed-in owner, on the period actually
+                  // running out: a projected row is a renewal that has not come
+                  // due, and a one-off purchase has no next period to move to.
+                  const renewable = authed && !r.projected && r.bill.months > 0
+                  const next = renewable ? addMonths(r.date, r.bill.months) : ""
+                  const move = { id: r.bill.node.id, name: r.bill.node.name, from: r.date, to: next }
+                  return (
+                  <li key={`${r.bill.node.id}/${r.date}`} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-2.5 text-sm">
                     <span className="tnum w-9 shrink-0 text-center text-xs font-semibold text-primary">{Number(r.date.slice(8))} 日</span>
                     <div className="flex min-w-0 flex-1 items-center gap-2">
                       <span className="truncate font-medium text-foreground">{r.bill.node.name}</span>
@@ -294,8 +368,37 @@ export function Bill({ nodes, rates: rateLines, live: liveOn }: { nodes: Node[];
                         <div className="tnum text-[11px] text-muted-foreground">≈ {cny(r.bill.cny)}</div>
                       )}
                     </div>
+                    {renewable && asking !== move.id && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 shrink-0 cursor-pointer px-2.5"
+                        title={`标记为已续费，把到期日顺延一个周期到 ${next}`}
+                        onClick={() => { setAsking(move.id); setRefused(null) }}
+                      >
+                        已续费
+                      </Button>
+                    )}
+                    {/* Asked once more, in place, before anything is written:
+                        the button sits in a list a finger scrolls past, and what
+                        it changes is the hub's own record of the node. */}
+                    {renewable && asking === move.id && (
+                      <div className="flex w-full flex-wrap items-center justify-end gap-2 text-xs">
+                        {refused?.id === move.id && <span role="alert" className="mr-auto text-destructive">没有改成：{refused.message}</span>}
+                        <span className="text-muted-foreground">
+                          到期日顺延到 <span className="tnum font-medium text-foreground">{next}</span>？
+                        </span>
+                        <Button size="sm" className="h-7 cursor-pointer px-2.5" disabled={busy !== null} onClick={() => void setExpiry(move)}>
+                          {busy === move.id ? "正在保存…" : "确认"}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 cursor-pointer px-2.5" disabled={busy !== null} onClick={() => setAsking(null)}>
+                          取消
+                        </Button>
+                      </div>
+                    )}
                   </li>
-                ))}
+                  )
+                })}
               </ul>
             )}
           </div>

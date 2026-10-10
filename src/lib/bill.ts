@@ -17,6 +17,18 @@ export const CYCLE_MONTHS: Record<string, number> = {
 }
 
 /**
+ * A cycle as the hub spells it, in months: one of the names above, or any
+ * other length as `18m`. Anything else -- empty, or a spelling from a hub
+ * newer than this theme -- is read as monthly, the commonest, rather than
+ * dropping the node from every total.
+ */
+export function cycleMonths(cycle: string): number {
+  if (cycle in CYCLE_MONTHS) return CYCLE_MONTHS[cycle]
+  const custom = /^(\d+)m$/.exec(cycle)
+  return custom && Number(custom[1]) > 0 ? Number(custom[1]) : 1
+}
+
+/**
  * What one unit of each currency is in yuan, as of `RATES_DATE`. The table the
  * totals fall back on where the day's rates (lib/fx.ts) are switched off or
  * cannot be had; a site can also fix any currency itself in the theme
@@ -116,9 +128,7 @@ export type Bill = {
 export function billOf(node: Node, rates: Record<string, number>, today: string): Bill {
   const currency = (node.currency || "").toUpperCase()
   const price = node.price > 0 ? node.price : 0
-  // An unknown or empty cycle is read as monthly, the commonest, rather than
-  // dropping the node from every total.
-  const months = CYCLE_MONTHS[node.billing_cycle] ?? 1
+  const months = cycleMonths(node.billing_cycle)
   const rate = rates[currency]
   const cny = price > 0 && rate !== undefined ? price * rate : null
   const due = node.expires_at && VALID.test(node.expires_at) ? node.expires_at : null
