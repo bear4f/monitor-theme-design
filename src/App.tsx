@@ -1,6 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import {
-  ArrowUp, ChartLine, ExternalLink, House, Mail, Monitor, Moon, Palette, Send, Sparkles, Sun, UserRound, type LucideIcon,
+  ArrowUp, ChartLine, ExternalLink, House, Mail, Monitor, Moon, Palette, ReceiptText, Send, Sparkles, Sun, UserRound, type LucideIcon,
 } from "lucide-react"
 
 import { NodePicker } from "@/components/NodePicker"
@@ -13,7 +13,7 @@ import { AccessProvider, resolveAccess } from "@/lib/access"
 import { api, useNodes } from "@/lib/api"
 import { primeGlances, recallLines, rememberLines } from "@/lib/glance"
 import { recordLive } from "@/lib/live"
-import { Link, useNodeRoute } from "@/lib/route"
+import { Link, useBillRoute, useNodeRoute } from "@/lib/route"
 import { THEMES } from "@/lib/themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 import { parseFooterItems } from "@/lib/footer"
@@ -28,6 +28,10 @@ type Me = { authed: boolean; github: boolean; site_name: string; public_page: bo
 // Warmed as soon as the app starts, so the first chart opened does not wait on it.
 const loadDetail = () => import("@/components/NodeDetail").then((m) => ({ default: m.NodeDetail }))
 const NodeDetail = lazy(loadDetail)
+
+// Its own chunk as well: most visits never open it, and on most sites a
+// visitor cannot.
+const Bill = lazy(() => import("@/components/Bill").then((m) => ({ default: m.Bill })))
 
 const DARK_MEDIA = matchMedia("(prefers-color-scheme: dark)")
 
@@ -226,7 +230,7 @@ function ThemeSettingsControl({
         size="icon"
         onClick={() => setOpen(!open)}
         className={cn(
-          "size-8 rounded-md transition-colors",
+          "size-8 rounded-md transition-colors max-sm:size-7",
           open ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
         )}
         title="主题配色与质感设置"
@@ -369,7 +373,7 @@ function NavTab({ href, active, icon: Icon, children }: { href: string; active: 
       href={href}
       aria-current={active ? "page" : undefined}
       title={children}
-      className={cn(SEGMENT.item, "text-xs max-sm:px-2", active ? SEGMENT.on : SEGMENT.off)}
+      className={cn(SEGMENT.item, "text-xs max-sm:px-1.5", active ? SEGMENT.on : SEGMENT.off)}
     >
       <Icon className="size-3.5" />
       <span className="max-sm:sr-only">{children}</span>
@@ -399,6 +403,7 @@ export default function App() {
   const [meError, setMeError] = useState("")
   const { nodes, error, closed } = useNodes()
   const open = useNodeRoute()
+  const billRoute = useBillRoute()
 
   const loadMe = useCallback(() => {
     return api<Me>("/me")
@@ -460,10 +465,14 @@ export default function App() {
   const footerLayout = FOOTER_LAYOUTS[String(config?.footer_layout)] ?? FOOTER_LAYOUTS.split
   const authed = me?.authed === true
   const access = useMemo(() => resolveAccess(authed, config), [authed, config])
+  // The bill page, for a reader who may see it. Anyone else at its address
+  // gets the list, as they would at any address the theme does not know.
+  const bill = billRoute && access.bill
+  const billRates = typeof config?.bill_rates === "string" ? config.bill_rates : ""
 
   useEffect(() => {
-    document.title = [selected?.name, site].filter(Boolean).join(" · ")
-  }, [selected?.name, site])
+    document.title = [bill ? "账单" : selected?.name, site].filter(Boolean).join(" · ")
+  }, [bill, selected?.name, site])
 
   if (!me) return (
     <div className="grid min-h-svh place-items-center p-6 text-sm text-muted-foreground">
@@ -496,27 +505,33 @@ export default function App() {
 
       {/* Standard full-width sticky navigation bar aligned with page measure */}
       <header className="sticky top-0 z-40 w-full border-b border-border/70 bg-background/80 backdrop-blur-md supports-[backdrop-filter]:bg-background/60">
-        <div className={cn(CONTAINER_CLASS, "flex h-14 items-center justify-between gap-4")}>
-          <div className="flex items-center gap-6 max-sm:gap-3">
-            <Link href="/" className="flex min-w-0 items-center gap-2.5 font-semibold tracking-tight text-foreground transition-colors hover:opacity-90">
+        <div className={cn(CONTAINER_CLASS, "flex h-14 items-center justify-between gap-4 max-sm:gap-1.5")}>
+          {/* Allowed to shrink, so that with three pages in the nav it is the
+              site's name that gives way on a phone, by truncating, and not
+              the sign-in link at the far end, by leaving the screen. */}
+          <div className="flex min-w-0 items-center gap-6 max-sm:gap-2">
+            <Link href="/" className="flex min-w-0 items-center gap-2.5 max-sm:gap-1.5 font-semibold tracking-tight text-foreground transition-colors hover:opacity-90">
               <img src="/favicon.svg" alt="" className="size-5 shrink-0" />
-              <span className="truncate text-base font-bold">{site}</span>
+              <span className="truncate text-base font-bold max-sm:text-sm">{site}</span>
             </Link>
             <nav aria-label="页面" className={cn(SEGMENT.list, "shrink-0")}>
-              <NavTab href="/" active={open === null} icon={House}>首页</NavTab>
+              <NavTab href="/" active={open === null && !bill} icon={House}>首页</NavTab>
               {sorted.length > 0 && (
                 <NavTab href={`/node/${open ?? sorted[0].id}`} active={open !== null} icon={ChartLine}>监控</NavTab>
+              )}
+              {access.bill && sorted.length > 0 && (
+                <NavTab href="/bill" active={bill} icon={ReceiptText}>账单</NavTab>
               )}
             </nav>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <Segmented
               value={mode}
               onChange={choose}
               options={MODES}
               label="外观"
-              className="max-sm:[&>button]:px-2"
+              className="max-sm:[&>button]:px-1.5"
             />
             <ThemeSettingsControl
               themeId={themeId}
@@ -530,7 +545,7 @@ export default function App() {
             <a
               href="/admin/"
               title={me.authed ? "后台" : "登录"}
-              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground max-sm:size-7"
             >
               <UserRound className="size-4" />
               <span className="sr-only">{me.authed ? "后台" : "登录"}</span>
@@ -556,6 +571,10 @@ export default function App() {
 
         {!nodes ? (
           <ServerTableSkeleton />
+        ) : bill ? (
+          <Suspense fallback={<Skeleton className="h-96" />}>
+            <Bill nodes={sorted} rates={billRates} />
+          </Suspense>
         ) : open === null ? (
           sorted.length === 0 ? (
             <Card className="py-16 text-center text-sm text-muted-foreground">还没有节点</Card>

@@ -20,15 +20,18 @@ export type Access = {
   metrics: boolean
   /** When a node's term ends, in the list's column and on the overview's last card. */
   expiry: boolean
+  /** The bill page: what the nodes cost and when each is next paid for. */
+  bill: boolean
 }
 
-const FULL: Access = { overview: true, charts: true, metrics: true, expiry: true }
+const FULL: Access = { overview: true, charts: true, metrics: true, expiry: true, bill: true }
 
 const KEYS: Record<keyof Access, string> = {
   overview: "guest_overview",
   charts: "guest_charts",
   metrics: "guest_metrics",
   expiry: "guest_expiry",
+  bill: "guest_bill",
 }
 
 // The manifest's own defaults, for the frames before the saved settings arrive
@@ -44,6 +47,7 @@ export function resolveAccess(authed: boolean, config: Record<string, unknown> |
     charts: granted(KEYS.charts),
     metrics: granted(KEYS.metrics),
     expiry: granted(KEYS.expiry),
+    bill: granted(KEYS.bill),
   }
 }
 

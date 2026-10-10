@@ -20,6 +20,18 @@ export function useNodeRoute() {
   return id
 }
 
+/** Whether the address is the bill page's, `/bill`. Served, like a node's, by the hub's fallback to index.html. */
+export function useBillRoute() {
+  const at = () => /^\/bill\/?$/.test(location.pathname)
+  const [bill, setBill] = useState(at)
+  useEffect(() => {
+    const sync = () => setBill(at())
+    addEventListener("popstate", sync)
+    return () => removeEventListener("popstate", sync)
+  }, [])
+  return bill
+}
+
 /** Announced as a popstate, so every `useNodeRoute` hears it the way it hears back. */
 function navigate(href: string) {
   history.pushState({}, "", href)
