@@ -4,6 +4,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的标签，如 v2.7.2：在所选分支的最新提交上新建这个标签并发布；留空只构建不发布"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -28,10 +33,21 @@ jobs:
       - run: tar czf theme.tar.gz dist theme.json preview.png
       - run: sha256sum theme.tar.gz | cut -d' ' -f1 | tee theme.tar.gz.sha256
 
-      # A manual dispatch builds and packages without publishing, so the path can
-      # be exercised without cutting a release. gh ships on the runner, keeping a
-      # third-party action out of the contents:write step.
+      # A manual dispatch without a tag builds and packages without publishing, so
+      # the path can be exercised without cutting a release. gh ships on the
+      # runner, keeping a third-party action out of the contents:write step.
       - if: startsWith(github.ref, 'refs/tags/')
         run: gh release create "$GITHUB_REF_NAME" theme.tar.gz theme.tar.gz.sha256 --generate-notes --repo "$GITHUB_REPOSITORY"
         env:
+          GH_TOKEN: ${{ github.token }}
+
+      # A manual dispatch with a tag publishes from a branch: gh creates the tag on
+      # the commit just built. A tag that does not match theme.json is refused, so
+      # a release never carries an archive that names another version.
+      - if: github.event_name == 'workflow_dispatch' && inputs.tag != '' && !startsWith(github.ref, 'refs/tags/')
+        run: |
+          [ "$TAG" = "v$(jq -r .version theme.json)" ] || { echo "::error::标签 $TAG 与 theme.json 的版本 $(jq -r .version theme.json) 不符"; exit 1; }
+          gh release create "$TAG" theme.tar.gz theme.tar.gz.sha256 --target "$GITHUB_SHA" --generate-notes --repo "$GITHUB_REPOSITORY"
+        env:
+          TAG: ${{ inputs.tag }}
           GH_TOKEN: ${{ github.token }}
