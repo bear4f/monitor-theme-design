@@ -17,6 +17,7 @@ import { Link, useBillRoute, useNodeRoute } from "@/lib/route"
 import { THEMES } from "@/lib/themes"
 import { loadConfig, saveConfig } from "@/lib/config"
 import { parseFooterItems } from "@/lib/footer"
+import { store, stored } from "@/lib/prefs"
 import { cn } from "@/lib/utils"
 // The name, author and repository the footer credits, read from the manifest
 // the panel reads, so the two never disagree.
@@ -42,7 +43,7 @@ type Mode = "light" | "dark" | "system"
  * the two names is a choice, anything else is none.
  */
 const savedMode = (): Mode => {
-  const saved = localStorage.getItem("theme")
+  const saved = stored("theme")
   return saved === "dark" || saved === "light" ? saved : "system"
 }
 
@@ -83,8 +84,7 @@ function useTheme() {
     mode,
     dark,
     choose: (next: Mode) => {
-      if (next === "system") localStorage.removeItem("theme")
-      else localStorage.setItem("theme", next)
+      store("theme", next === "system" ? null : next)
       setMode(next)
     },
   }
@@ -102,7 +102,7 @@ const MODES = [
  */
 function useThemePreset(dark: boolean) {
   const [themeId, setThemeId] = useState<string>(() => {
-    const saved = localStorage.getItem("theme-preset")
+    const saved = stored("theme-preset")
     return THEMES.some((t) => t.id === saved) ? saved! : "claude"
   })
 
@@ -114,7 +114,7 @@ function useThemePreset(dark: boolean) {
     for (const [key, val] of Object.entries(vars)) {
       root.style.setProperty(`--${key}`, String(val))
     }
-    localStorage.setItem("theme-preset", themeId)
+    store("theme-preset", themeId)
   }, [activeTheme, dark, themeId])
 
   return { themeId, setThemeId, activeTheme }
@@ -127,12 +127,12 @@ function useThemePreset(dark: boolean) {
  */
 function useTextureSettings() {
   const [grainPercent, setGrainPercent] = useState<number>(() => {
-    const saved = localStorage.getItem("theme-grain-percent")
+    const saved = stored("theme-grain-percent")
     if (saved !== null) {
       const num = Number(saved)
       if (!Number.isNaN(num) && num >= 0 && num <= 100) return num
     }
-    const legacy = localStorage.getItem("theme-grain")
+    const legacy = stored("theme-grain")
     if (legacy === "off") return 0
     if (legacy === "subtle") return 10
     if (legacy === "film") return 35
@@ -140,7 +140,7 @@ function useTextureSettings() {
   })
 
   const [frostedPercent, setFrostedPercent] = useState<number>(() => {
-    const saved = localStorage.getItem("theme-frosted-percent")
+    const saved = stored("theme-frosted-percent")
     if (saved !== null) {
       const num = Number(saved)
       if (!Number.isNaN(num) && num >= 0 && num <= 100) return num
@@ -153,11 +153,11 @@ function useTextureSettings() {
     // Scale card opacity smoothly from 1.0 (0% frosted) down to 0.08 (100% frosted)
     const cardAlpha = Math.max(0.08, 1 - (frostedPercent * 0.92) / 100)
     root.style.setProperty("--card-opacity", String(cardAlpha))
-    localStorage.setItem("theme-frosted-percent", String(frostedPercent))
+    store("theme-frosted-percent", String(frostedPercent))
   }, [frostedPercent])
 
   useEffect(() => {
-    localStorage.setItem("theme-grain-percent", String(grainPercent))
+    store("theme-grain-percent", String(grainPercent))
   }, [grainPercent])
 
   return {
@@ -417,13 +417,13 @@ export default function App() {
     loadConfig().then((cfg) => {
       setConfig(cfg)
       rememberLines(cfg.row_latency === true && typeof cfg.row_latency_lines === "string" ? cfg.row_latency_lines : null)
-      if (!localStorage.getItem("theme-preset") && typeof cfg.theme_preset === "string") {
+      if (!stored("theme-preset") && typeof cfg.theme_preset === "string") {
         setThemeId(cfg.theme_preset)
       }
-      if (localStorage.getItem("theme-grain-percent") === null && typeof cfg.grain_percent === "number") {
+      if (stored("theme-grain-percent") === null && typeof cfg.grain_percent === "number") {
         setGrainPercent(cfg.grain_percent)
       }
-      if (localStorage.getItem("theme-frosted-percent") === null && typeof cfg.frosted_percent === "number") {
+      if (stored("theme-frosted-percent") === null && typeof cfg.frosted_percent === "number") {
         setFrostedPercent(cfg.frosted_percent)
       }
     }).catch(() => {})

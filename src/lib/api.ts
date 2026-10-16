@@ -111,7 +111,8 @@ export function safeNodes(nodes: Node[]): Node[] {
 
 /**
  * Live node list. Uses the WebSocket the hub pushes every two seconds, falling
- * back to polling if it cannot be established.
+ * back to polling `/api/nodes` while it cannot be established and trying the
+ * stream again now and then.
  */
 export function useNodes() {
   const [nodes, setNodes] = useState<Node[] | null>(null)
@@ -127,6 +128,8 @@ export function useNodes() {
     let poll: ReturnType<typeof setInterval> | null = null
     let retry: ReturnType<typeof setTimeout> | null = null
     let closed = false
+    // Streams in a row that ended without delivering a frame.
+    let failed = 0
 
     const receive = (list: Node[]) => {
       setNodes(safeNodes(list))
@@ -156,6 +159,7 @@ export function useNodes() {
         return
       }
       socket.onmessage = (event) => {
+        failed = 0
         receive(JSON.parse(event.data).nodes)
         // The stream has returned; the poll was only covering for it.
         if (poll) {
@@ -167,7 +171,12 @@ export function useNodes() {
       socket.onclose = () => {
         if (closed) return
         poll ??= setInterval(fetchOnce, 5000)
-        retry = setTimeout(connect, 5000)
+        // Since 1.4.1 the hub refuses anonymous streams past 1000 at once, and
+        // answers the handshake with a 503. Retrying every five seconds would
+        // only add to the crowd it turned away, so each failure in a row
+        // doubles the wait, to a minute at most; the poll keeps the page
+        // current meanwhile.
+        retry = setTimeout(connect, Math.min(5000 * 2 ** failed++, 60_000))
       }
     }
     connect()

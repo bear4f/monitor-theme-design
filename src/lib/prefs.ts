@@ -4,6 +4,27 @@ import { useState } from "react"
 // already a key the two apps agree on.
 const PREFIX = "serverstatus:"
 
+// A browser with site data switched off throws SecurityError on merely reading
+// `localStorage`, and an uncaught one at startup leaves the page blank. Reading
+// then finds nothing, and a write lasts until the page is closed.
+export function stored(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+/** `null` removes the key. */
+export function store(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // Storage full or disabled: the value holds for this page.
+  }
+}
+
 /**
  * What was stored under `name`, when it is of the kind `initial` is; otherwise
  * `initial`. A value of another kind is an older build's, or someone's, and the
