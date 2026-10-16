@@ -97,14 +97,39 @@ const MODES = [
   { value: "dark" as const, label: <Moon className="size-3.5" />, title: "深色" },
 ]
 
+// Up to 2.7.1 the three below were written on every load, so a visitor who
+// never touched them has the built-in value stored, and it read as a choice that
+// kept the site's default from ever applying. Dropped once; a visitor who did
+// pick the built-in value gets the site's default until they pick again.
+const APPEARANCE_MIGRATED = "serverstatus:appearance-v2"
+if (stored(APPEARANCE_MIGRATED) === null) {
+  for (const [key, builtin] of [["theme-preset", "claude"], ["theme-grain-percent", "16"], ["theme-frosted-percent", "20"]])
+    if (stored(key) === builtin) store(key, null)
+  store(APPEARANCE_MIGRATED, "1")
+}
+
+const savedPreset = () => {
+  const saved = stored("theme-preset")
+  return THEMES.some((t) => t.id === saved) ? saved : null
+}
+
+const savedPercent = (key: string) => {
+  const saved = stored(key)
+  if (saved === null) return null
+  const num = Number(saved)
+  return !Number.isNaN(num) && num >= 0 && num <= 100 ? num : null
+}
+
+// The grain as an older build stored it, before it was a percentage.
+const savedLegacyGrain = () => ({ off: 0, subtle: 10, film: 35 } as Record<string, number>)[stored("theme-grain") ?? ""] ?? null
+
 /**
- * Hook to manage dynamic tweakcn theme presets at runtime.
+ * Hook to manage dynamic tweakcn theme presets at runtime. Only the visitor's
+ * own pick is stored; until there is one, the site's default stands in once the
+ * settings arrive (`applyDefault`).
  */
 function useThemePreset(dark: boolean) {
-  const [themeId, setThemeId] = useState<string>(() => {
-    const saved = stored("theme-preset")
-    return THEMES.some((t) => t.id === saved) ? saved! : "claude"
-  })
+  const [themeId, setThemeId] = useState<string>(() => savedPreset() ?? "claude")
 
   const activeTheme = useMemo(() => THEMES.find((t) => t.id === themeId) ?? THEMES[0], [themeId])
 
@@ -114,57 +139,61 @@ function useThemePreset(dark: boolean) {
     for (const [key, val] of Object.entries(vars)) {
       root.style.setProperty(`--${key}`, String(val))
     }
-    store("theme-preset", themeId)
-  }, [activeTheme, dark, themeId])
+  }, [activeTheme, dark])
 
-  return { themeId, setThemeId, activeTheme }
+  const choose = useCallback((id: string) => {
+    store("theme-preset", id)
+    setThemeId(id)
+  }, [])
+  const applyDefault = useCallback((id: string) => {
+    if (savedPreset() === null && THEMES.some((t) => t.id === id)) setThemeId(id)
+  }, [])
+
+  return { themeId, choose, applyDefault, activeTheme }
 }
 
 /**
  * Hook to manage Zen Browser dual-parameter texture settings:
  * 1. Grain (Perlin noise intensity, 0-100%)
  * 2. Frosted Blur / Opacity (Container acrylic translucency, 0-100%)
+ * Stored, like the preset, only when the visitor moves the slider.
  */
 function useTextureSettings() {
-  const [grainPercent, setGrainPercent] = useState<number>(() => {
-    const saved = stored("theme-grain-percent")
-    if (saved !== null) {
-      const num = Number(saved)
-      if (!Number.isNaN(num) && num >= 0 && num <= 100) return num
-    }
-    const legacy = stored("theme-grain")
-    if (legacy === "off") return 0
-    if (legacy === "subtle") return 10
-    if (legacy === "film") return 35
-    return 16
-  })
+  const [grainPercent, setGrainPercent] = useState<number>(
+    () => savedPercent("theme-grain-percent") ?? savedLegacyGrain() ?? 16,
+  )
 
-  const [frostedPercent, setFrostedPercent] = useState<number>(() => {
-    const saved = stored("theme-frosted-percent")
-    if (saved !== null) {
-      const num = Number(saved)
-      if (!Number.isNaN(num) && num >= 0 && num <= 100) return num
-    }
-    return 20 // Default 20% frosted translucency
-  })
+  const [frostedPercent, setFrostedPercent] = useState<number>(
+    () => savedPercent("theme-frosted-percent") ?? 20, // Default 20% frosted translucency
+  )
 
   useEffect(() => {
     const root = document.documentElement
     // Scale card opacity smoothly from 1.0 (0% frosted) down to 0.08 (100% frosted)
     const cardAlpha = Math.max(0.08, 1 - (frostedPercent * 0.92) / 100)
     root.style.setProperty("--card-opacity", String(cardAlpha))
-    store("theme-frosted-percent", String(frostedPercent))
   }, [frostedPercent])
 
-  useEffect(() => {
-    store("theme-grain-percent", String(grainPercent))
-  }, [grainPercent])
+  const chooseGrain = useCallback((val: number) => {
+    store("theme-grain-percent", String(val))
+    setGrainPercent(val)
+  }, [])
+  const chooseFrosted = useCallback((val: number) => {
+    store("theme-frosted-percent", String(val))
+    setFrostedPercent(val)
+  }, [])
+  const applyDefaults = useCallback((grain: unknown, frosted: unknown) => {
+    const inRange = (v: unknown): v is number => typeof v === "number" && v >= 0 && v <= 100
+    if (inRange(grain) && savedPercent("theme-grain-percent") === null && savedLegacyGrain() === null) setGrainPercent(grain)
+    if (inRange(frosted) && savedPercent("theme-frosted-percent") === null) setFrostedPercent(frosted)
+  }, [])
 
   return {
     grainPercent,
-    setGrainPercent,
+    chooseGrain,
     frostedPercent,
-    setFrostedPercent,
+    chooseFrosted,
+    applyDefaults,
   }
 }
 
@@ -396,8 +425,8 @@ const CONTAINER_CLASS = "mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8"
 
 export default function App() {
   const { mode, dark, choose } = useTheme()
-  const { themeId, setThemeId } = useThemePreset(dark)
-  const { grainPercent, setGrainPercent, frostedPercent, setFrostedPercent } = useTextureSettings()
+  const { themeId, choose: chooseTheme, applyDefault: applyPresetDefault } = useThemePreset(dark)
+  const { grainPercent, chooseGrain, frostedPercent, chooseFrosted, applyDefaults: applyTextureDefaults } = useTextureSettings()
   const [config, setConfig] = useState<Record<string, unknown> | null>(null)
   const [me, setMe] = useState<Me | null>(null)
   const [meError, setMeError] = useState("")
@@ -417,18 +446,11 @@ export default function App() {
     loadConfig().then((cfg) => {
       setConfig(cfg)
       rememberLines(cfg.row_latency === true && typeof cfg.row_latency_lines === "string" ? cfg.row_latency_lines : null)
-      if (!stored("theme-preset") && typeof cfg.theme_preset === "string") {
-        setThemeId(cfg.theme_preset)
-      }
-      if (stored("theme-grain-percent") === null && typeof cfg.grain_percent === "number") {
-        setGrainPercent(cfg.grain_percent)
-      }
-      if (stored("theme-frosted-percent") === null && typeof cfg.frosted_percent === "number") {
-        setFrostedPercent(cfg.frosted_percent)
-      }
+      if (typeof cfg.theme_preset === "string") applyPresetDefault(cfg.theme_preset)
+      applyTextureDefaults(cfg.grain_percent, cfg.frosted_percent)
     }).catch(() => {})
     void loadDetail()
-  }, [loadMe, setThemeId, setGrainPercent, setFrostedPercent])
+  }, [loadMe, applyPresetDefault, applyTextureDefaults])
 
   useEffect(() => {
     if (closed) void loadMe()
@@ -536,11 +558,11 @@ export default function App() {
             />
             <ThemeSettingsControl
               themeId={themeId}
-              onThemeChange={setThemeId}
+              onThemeChange={chooseTheme}
               grainPercent={grainPercent}
-              onGrainChange={setGrainPercent}
+              onGrainChange={chooseGrain}
               frostedPercent={frostedPercent}
-              onFrostedChange={setFrostedPercent}
+              onFrostedChange={chooseFrosted}
               authed={me.authed}
             />
             <a
