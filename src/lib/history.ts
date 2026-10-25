@@ -12,6 +12,11 @@ export type Point = {
   disk_used: number
   net_rx: number
   net_tx: number
+  // The highest rate the agent measured over one report interval within the
+  // bucket, never below its mean. Absent from hubs predating it, and from the
+  // live samples, where each point is already one report.
+  net_rx_max?: number
+  net_tx_max?: number
 }
 
 // `latency` is the bucket's median round trip, null when every probe in it timed

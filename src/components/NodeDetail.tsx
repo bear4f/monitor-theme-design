@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import {
-  Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, LineChart, ResponsiveContainer,
+  Area, AreaChart, Brush, CartesianGrid, ComposedChart, Line, ResponsiveContainer,
   Tooltip, XAxis, YAxis,
 } from "recharts"
 
@@ -28,9 +28,9 @@ const AXIS = { stroke: "currentColor", fontSize: 11, tickLine: false, axisLine: 
 const SERIES = { dot: false as const, strokeWidth: 1.5, isAnimationActive: false }
 
 // One width for every panel's value axis. Sized to their own labels -- 40px
-// under "100%", 68px under "172 MB" -- the plot would shift 28px sideways as the
-// tabs switch between them.
-const Y_WIDTH = 68
+// under "100%", 76px under "256 MB/s", narrower and it wraps -- the plot would
+// shift 36px sideways as the tabs switch between them.
+const Y_WIDTH = 76
 
 // Hue alone separates the probes. A dash pattern would not: once every ping in a
 // day is on the chart its period is shorter than the jitter, and dotted and dashed
@@ -513,14 +513,20 @@ const LIVE_GAP_S = 20
 
 type Row = { ts: number } & { [K in Exclude<keyof Point, "ts">]: number | null }
 
-/** The samples as chart rows, in milliseconds, with an empty row wherever reports stopped. */
+/** A point as a chart row: in milliseconds, and with no peak where none was sent. */
+const toRow = (p: Point): Row => ({ ...p, ts: p.ts * 1_000, net_rx_max: p.net_rx_max ?? null, net_tx_max: p.net_tx_max ?? null })
+
+/** The samples as chart rows, with an empty row wherever reports stopped. */
 function liveRows(samples: Point[]): Row[] {
   const rows: Row[] = []
   samples.forEach((p, i) => {
     if (i > 0 && p.ts - samples[i - 1].ts > LIVE_GAP_S) {
-      rows.push({ ts: (samples[i - 1].ts + 1) * 1_000, cpu: null, mem_used: null, disk_used: null, net_rx: null, net_tx: null })
+      rows.push({
+        ts: (samples[i - 1].ts + 1) * 1_000,
+        cpu: null, mem_used: null, disk_used: null, net_rx: null, net_tx: null, net_rx_max: null, net_tx_max: null,
+      })
     }
-    rows.push({ ...p, ts: p.ts * 1_000 })
+    rows.push(toRow(p))
   })
   return rows
 }
@@ -597,9 +603,32 @@ export function NodeDetail({ node }: { node: Node }) {
 
   // The hub answers in seconds; the time axis requires milliseconds.
   const metricRows = useMemo<Row[]>(
-    () => (live ? liveRows(samples) : (data?.metrics ?? []).map((m) => ({ ...m, ts: m.ts * 1_000 }))),
+    () => (live ? liveRows(samples) : (data?.metrics ?? []).map(toRow)),
     [live, samples, data],
   )
+
+  // The network panel's rows: each rate also spans from its mean to its peak,
+  // the band drawn behind the line. Without a peak the band has no height.
+  const netRows = useMemo(
+    () => metricRows.map((m) => ({
+      ...m,
+      rx_band: m.net_rx === null ? null : [m.net_rx, Math.max(m.net_rx, m.net_rx_max ?? 0)],
+      tx_band: m.net_tx === null ? null : [m.net_tx, Math.max(m.net_tx, m.net_tx_max ?? 0)],
+    })),
+    [metricRows],
+  )
+  // The window's highest rate each way. Live, every point is one report and
+  // the highest of them is a peak; from history it is the highest bucket peak,
+  // and null from a hub that sends none, since a maximum of the means would be
+  // labelled a peak it is not.
+  const peak = useMemo(() => {
+    if (!live && !metricRows.some((m) => m.net_rx_max !== null)) return null
+    const max = (pick: (m: Row) => number | null) => metricRows.reduce((hi, m) => Math.max(hi, pick(m) ?? 0), 0)
+    return {
+      rx: max((m) => Math.max(m.net_rx ?? 0, m.net_rx_max ?? 0)),
+      tx: max((m) => Math.max(m.net_tx ?? 0, m.net_tx_max ?? 0)),
+    }
+  }, [live, metricRows])
   const axis = live ? liveAxis(metricRows) : timeAxis(metricRows, span)
 
   // Axis tops for the two panels with no capacity to measure against. CPU and a
@@ -613,8 +642,9 @@ export function NodeDetail({ node }: { node: Node }) {
       // A floor of 4%, or a machine that never exceeds 0.4% would get an axis of
       // 0-0.4 and render every scheduler blip as a peak. Capped at 100.
       cpu: axisTop(max((m) => m.cpu), 4, 10, 100),
-      // Base 1024, so the steps are round in the unit `axisBytes` prints.
-      rate: axisTop(max((m) => Math.max(m.net_rx ?? 0, m.net_tx ?? 0)), 1024, 1024),
+      // Base 1024, so the steps are round in the unit `axisBytes` prints. Fitted
+      // to the peaks, so the band stays within the panel.
+      rate: axisTop(max((m) => Math.max(m.net_rx ?? 0, m.net_tx ?? 0, m.net_rx_max ?? 0, m.net_tx_max ?? 0)), 1024, 1024),
     }
   }, [metricRows])
 
@@ -711,25 +741,61 @@ export function NodeDetail({ node }: { node: Node }) {
             </Panel>
           ) : chart === "net" ? (
             /* A rate has no total to be a fraction of, so this one climbs the
-               ladder like CPU rather than pinning to a capacity. */
+               ladder like CPU rather than pinning to a capacity.
+
+               The line is the bucket's mean, so it integrates to the traffic
+               totals, and a 15-second speed test averaged over its minute draws
+               at a quarter of the rate it ran at. The band behind it reaches the
+               highest rate measured within the bucket, and is edged because a
+               one-minute burst on a day's axis is narrower than a pixel, where a
+               fill alone does not show. Dashed, so the edge does not read as a
+               third rate beside the two lines. */
             <Panel
               title={
                 <>
                   网络速率
-                  <span className="ml-3 text-chart-2">● 下行</span>
-                  <span className="ml-2 text-chart-3">● 上行</span>
+                  <span className="ml-3 whitespace-nowrap text-chart-2">
+                    ● 下行{peak && <span className="tabular-nums text-muted-foreground"> 峰值 {rate(peak.rx)}</span>}
+                  </span>
+                  <span className="ml-2 whitespace-nowrap text-chart-3">
+                    ● 上行{peak && <span className="tabular-nums text-muted-foreground"> 峰值 {rate(peak.tx)}</span>}
+                  </span>
                 </>
               }
             >
               <ResponsiveContainer>
-                <LineChart data={metricRows}>
+                <ComposedChart data={netRows}>
                   <CartesianGrid className="stroke-border" vertical={false} />
                   <XAxis {...axis} />
                   <YAxis domain={[0, tops.rate]} ticks={quarters(tops.rate)} tickFormatter={axisBytes} unit="/s" width={Y_WIDTH} {...AXIS} />
-                  <Tooltip labelFormatter={label} formatter={(v) => rate(Number(v))} contentStyle={TIP} />
+                  <Tooltip
+                    labelFormatter={label}
+                    formatter={(v, name, item) => {
+                      const top = item?.payload?.[`${item.dataKey}_max`] as number | null | undefined
+                      return [top == null ? rate(Number(v)) : `均值 ${rate(Number(v))} · 峰值 ${rate(Math.max(top, Number(v)))}`, name]
+                    }}
+                    contentStyle={TIP}
+                  />
+                  {[
+                    { key: "rx", stroke: "var(--color-chart-2)" },
+                    { key: "tx", stroke: "var(--color-chart-3)" },
+                  ].map((b) => (
+                    <Area
+                      key={b.key}
+                      dataKey={`${b.key}_band`}
+                      stroke={b.stroke}
+                      strokeWidth={1}
+                      strokeDasharray="2 2"
+                      fill={b.stroke}
+                      fillOpacity={0.16}
+                      isAnimationActive={false}
+                      tooltipType="none"
+                      legendType="none"
+                    />
+                  ))}
                   <Line dataKey="net_rx" name="下行" stroke="var(--color-chart-2)" {...SERIES} />
                   <Line dataKey="net_tx" name="上行" stroke="var(--color-chart-3)" {...SERIES} />
-                </LineChart>
+                </ComposedChart>
               </ResponsiveContainer>
             </Panel>
           ) : (
